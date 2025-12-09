@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <title>Scraper apartamente</title>
+    <script>
+        function startScraping() {
+            document.getElementById("status").innerText = "Scraping in progress...";
+            fetch('/scrape')
+            .then(response => response.json())
+            .then(data => {
+                checkStatus();
+            });
+        }
+
+        function checkStatus() {
+            fetch('/status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.finished) {
+                    document.getElementById("status").innerText = "Scraping finished!";
+                } else {
+                    setTimeout(checkStatus, 2000); // verifica din 2 in 2 secunde
+                }
+            });
+        }
+    </script>
+</head>
+<body>
+    <h1>Scraper apartamente</h1>
+    <button onclick="startScraping()">Cauta apartamente</button>
+    <button onclick="window.location.href='/download'">Descarca Excel</button>
+    <p id="status">Status: Nu s-a pornit scraping-ul.</p>
+</body>
+</html>
