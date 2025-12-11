@@ -2,34 +2,40 @@
 <html lang="ro">
 <head>
     <meta charset="UTF-8">
-    <title>Scraper apartamente</title>
+    <title>Scrapers</title>
+</head>
+<body>
+    <h1>Scraper Apartamente</h1>
+
+    <h2>Imobiliare.ro</h2>
+    <button onclick="startScraping('imobiliare')">Cauta pe Imobiliare.ro</button>
+    <button onclick="window.location.href='/download/imobiliare'">Download Imobiliare</button>
+    <p id="status_imobiliare">Status: -</p>
+
+    <h2>Publi24</h2>
+    <button onclick="startScraping('publi24')">Cauta pe Publi24</button>
+    <button onclick="window.location.href='/download/publi24'">Download Publi24</button>
+    <p id="status_publi24">Status: -</p>
+
+
     <script>
-        function startScraping() {
-            document.getElementById("status").innerText = "Scraping in progress...";
-            fetch('/scrape')
-            .then(response => response.json())
-            .then(data => {
-                checkStatus();
-            });
+        function startScraping(site) {
+            document.getElementById("status_" + site).innerText = "Scraping...";
+            fetch('/scrape/' + site)
+            .then(() => checkStatus(site));
         }
 
-        function checkStatus() {
-            fetch('/status')
-            .then(response => response.json())
+        function checkStatus(site) {
+            fetch('/status/' + site)
+            .then(r => r.json())
             .then(data => {
                 if (data.finished) {
-                    document.getElementById("status").innerText = "Scraping finished!";
+                    document.getElementById("status_" + site).innerText = "Terminat!";
                 } else {
-                    setTimeout(checkStatus, 2000); // verifica din 2 in 2 secunde
+                    setTimeout(() => checkStatus(site), 2000);
                 }
             });
         }
     </script>
-</head>
-<body>
-    <h1>Scraper apartamente</h1>
-    <button onclick="startScraping()">Cauta apartamente</button>
-    <button onclick="window.location.href='/download'">Descarca Excel</button>
-    <p id="status">Status: Nu s-a pornit scraping-ul.</p>
 </body>
 </html>
