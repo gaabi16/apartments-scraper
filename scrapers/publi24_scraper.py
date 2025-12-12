@@ -8,69 +8,141 @@ import re
 
 URL_PUBLI24 = "https://www.publi24.ro/anunturi/imobiliare/de-vanzare/apartamente/apartamente-2-camere/bucuresti/sector-1/?q=apartament+2+camere&maxprice=81000"
 
-
 def get_driver():
     options = webdriver.ChromeOptions()
     options.add_argument("--disable-blink-features=AutomationControlled")
     return webdriver.Chrome(options=options)
-
 
 def clean(text):
     if not text:
         return ""
     return " ".join(text.replace("\n", " ").split())
 
-
 def extract_first_price(price_text):
     if not price_text:
         return None
-    text = price_text.replace("€", "").replace(" ", "").replace(".", "").replace(",", ".")
+    text = price_text.replace("€", "").replace("EUR", "").replace(" ", "").replace(".", "").replace(",", ".")
     match = re.search(r"\d+(\.\d+)?", text)
     return float(match.group()) if match else None
 
+# ----------------------------------------------------------
+#   PAGINATION PARSER — EXTRACT ALL PAGE NUMBERS
+# ----------------------------------------------------------
+
+def extract_all_pages(soup):
+    pagination = soup.select_one("ul.pagination")
+    if not pagination:
+        return [1]
+
+    divs = pagination.find_all("div")
+    if len(divs) < 3:
+        return [1]
+
+    pages_div = divs[1]
+
+    visible_pages = []
+    for li in pages_div.find_all("li"):
+        a = li.find("a")
+        if a and a.text.isdigit():
+            visible_pages.append(int(a.text))
+
+    if not visible_pages:
+        return [1]
+
+    # Fill gaps: example [1, 2, 4, 5] → [1, 2, 3, 4, 5]
+    full_pages = []
+    for i in range(len(visible_pages) - 1):
+        start = visible_pages[i]
+        end = visible_pages[i + 1]
+        full_pages.extend(range(start, end))
+    full_pages.append(visible_pages[-1])
+
+    return full_pages
+
+# ----------------------------------------------------------
+#   SCRAPE A PAGE
+# ----------------------------------------------------------
+
+def scrape_page(driver, page_number):
+    """Extrage toate apartamentele de pe pagina curentă și adaugă numărul paginii"""
+    time.sleep(3) 
+    soup = BeautifulSoup(driver.page_source, "html.parser")
+    articles = soup.select("div.article-list > div.article-item")
+    results = []
+
+    for article in articles:
+        try:
+            title_el = article.select_one("h2.article-title a")
+            title = clean(title_el.get_text()) if title_el else ""
+            link = title_el["href"] if title_el else ""
+
+            desc_el = article.select_one("p.article-description")
+            descriere = clean(desc_el.get_text()) if desc_el else ""
+
+            loc_el = article.select_one("p.article-location span")
+            zona = clean(loc_el.get_text()) if loc_el else ""
+
+            short_info_el = article.select_one("p.article-short-info span.article-lbl-txt")
+            suprafata = ""
+            if short_info_el:
+                match = re.search(r"(\d+)\s*m", short_info_el.get_text())
+                if match:
+                    suprafata = match.group(1)
+
+            price_el = article.select_one("div.article-info span.article-price")
+            pret = clean(price_el.get_text()) if price_el else ""
+
+            results.append([title, link, descriere, zona, suprafata, pret, page_number])
+
+        except Exception as e:
+            print("Eroare la articol:", e)
+            continue
+
+    return results
+
+# ----------------------------------------------------------
+#   MAIN SCRAPER
+# ----------------------------------------------------------
 
 def scrape_publi24():
     driver = get_driver()
     driver.get(URL_PUBLI24)
-    time.sleep(4)
+    time.sleep(3)
 
     soup = BeautifulSoup(driver.page_source, "html.parser")
+    pages = extract_all_pages(soup)
+
+    print("Pagini găsite:", pages)
+
+    all_results = []
+
+    for page_number in pages:
+        if page_number == 1:
+            url = URL_PUBLI24
+        else:
+            url = URL_PUBLI24 + f"&pag={page_number}"
+
+        print(f"Scraping pagina {page_number}: {url}")
+        driver.get(url)
+        page_results = scrape_page(driver, page_number)
+        all_results.extend(page_results)
+
     driver.quit()
 
-    ads = soup.select("div.listing")
-
-    results = []
-
-    for ad in ads:
-        try:
-            title_el = ad.select_one("h2 a")
-            title = clean(title_el.get_text()) if title_el else ""
-
-            link = "https://www.publi24.ro" + title_el["href"] if title_el else ""
-
-            price_el = ad.select_one(".price")
-            price = clean(price_el.get_text()) if price_el else ""
-
-            zona_el = ad.select_one(".location span")
-            zona = clean(zona_el.get_text()) if zona_el else ""
-
-            price_val = extract_first_price(price)
-
-            if price_val is None or price_val <= 81000:
-                results.append([title, price, link, zona])
-
-        except:
-            continue
-
+    # Salvare Excel
     tmp = tempfile.gettempdir()
     file_path = os.path.join(tmp, f"publi24_{int(time.time())}.xlsx")
 
     wb = Workbook()
     ws = wb.active
-    ws.append(["titlu", "pret", "link", "zona"])
+    ws.append(["Titlu", "Link", "Descriere", "Zona", "Suprafata(mp)", "Pret", "Pagina"])
 
-    for r in results:
+    for r in all_results:
         ws.append(r)
 
     wb.save(file_path)
+    print("Fișier Publi24 salvat:", file_path)
     return file_path
+
+if __name__ == "__main__":
+    scrape_publi24()
