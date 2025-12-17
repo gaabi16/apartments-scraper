@@ -6,6 +6,9 @@ import os
 import time
 import re
 
+# TODO
+# Filter apartments based on their description paragraph
+
 URL_IMOBILIARE = "https://www.imobiliare.ro/vanzare-apartamente/bucuresti/sector-1/2-camere?price=50000-80000&floor=1%2C2%2C3%2C4%2C5%2C6%2C7%2C8%2C9%2C10%2Cabove-10%2Cexcluded-last-floor"
 
 

@@ -6,6 +6,9 @@ import os
 import time
 import re
 
+# TODO
+# Filter apartments based on their description paragraph
+
 URL_PUBLI24 = "https://www.publi24.ro/anunturi/imobiliare/de-vanzare/apartamente/apartamente-2-camere/bucuresti/sector-1/?q=apartament+2+camere&maxprice=81000"
 
 def get_driver():
