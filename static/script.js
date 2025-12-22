@@ -121,7 +121,7 @@ function resetUI(site) {
 
 // Check initial status on page load
 document.addEventListener('DOMContentLoaded', function() {
-    ['imobiliare', 'publi24'].forEach(site => {
+    ['imobiliare', 'publi24', 'romimo'].forEach(site => {
         fetch(`/status/${site}`)
             .then(response => response.json())
             .then(data => {
