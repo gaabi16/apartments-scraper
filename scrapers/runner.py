@@ -1,10 +1,12 @@
 import threading
 from scrapers.imobiliare_scraper import scrape_imobiliare
 from scrapers.publi24_scraper import scrape_publi24
+from scrapers.romimo_scraper import scrape_romimo
 
 status = {
     "imobiliare": {"running": False, "finished": False, "file": None},
     "publi24": {"running": False, "finished": False, "file": None},
+    "romimo": {"running": False, "finished": False, "file": None},
 }
 
 
@@ -38,6 +40,21 @@ def run_publi24():
     status["publi24"]["finished"] = True
 
 
+def run_romimo():
+    status["romimo"]["running"] = True
+    status["romimo"]["finished"] = False
+    status["romimo"]["file"] = None
+
+    try:
+        file = scrape_romimo()
+        status["romimo"]["file"] = file
+    except Exception as e:
+        print("EROARE ROMIMO:", e)
+
+    status["romimo"]["running"] = False
+    status["romimo"]["finished"] = True
+
+
 def start_scraper(site_name):
     if status[site_name]["running"]:
         return False  # deja rulează
@@ -46,5 +63,7 @@ def start_scraper(site_name):
         threading.Thread(target=run_imobiliare).start()
     elif site_name == "publi24":
         threading.Thread(target=run_publi24).start()
+    elif site_name == "romimo":
+        threading.Thread(target=run_romimo).start()
 
     return True
