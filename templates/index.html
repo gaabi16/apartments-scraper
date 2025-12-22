@@ -2,40 +2,110 @@
 <html lang="ro">
 <head>
     <meta charset="UTF-8">
-    <title>Scrapers</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scraper Apartamente</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-    <h1>Scraper Apartamente</h1>
+    <div class="container">
+        <header>
+            <h1>Scraper Apartamente București</h1>
+            <p class="subtitle">Găsește apartamente de 2 camere în Sectorul 1</p>
+        </header>
 
-    <h2>Imobiliare.ro</h2>
-    <button onclick="startScraping('imobiliare')">Cauta pe Imobiliare.ro</button>
-    <button onclick="window.location.href='/download/imobiliare'">Download Imobiliare</button>
-    <p id="status_imobiliare">Status: -</p>
+        <div class="scrapers-grid">
+            <!-- Imobiliare.ro Card -->
+            <div class="scraper-card">
+                <div class="card-header imobiliare-header">
+                    <h2>Imobiliare.ro</h2>
+                    <div class="status-badge" id="badge_imobiliare">Gata</div>
+                </div>
+                
+                <div class="card-body">
+                    <div class="status-section">
+                        <div class="status-icon" id="icon_imobiliare">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <path d="M12 6v6l4 2"/>
+                            </svg>
+                        </div>
+                        <p class="status-text" id="status_imobiliare">Apasă butonul pentru a începe</p>
+                    </div>
 
-    <h2>Publi24</h2>
-    <button onclick="startScraping('publi24')">Cauta pe Publi24</button>
-    <button onclick="window.location.href='/download/publi24'">Download Publi24</button>
-    <p id="status_publi24">Status: -</p>
+                    <div class="progress-bar" id="progress_imobiliare">
+                        <div class="progress-fill"></div>
+                    </div>
 
+                    <div class="button-group">
+                        <button class="btn btn-primary" onclick="startScraping('imobiliare')" id="btn_scrape_imobiliare">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Caută pe Imobiliare
+                        </button>
+                        <button class="btn btn-secondary" onclick="downloadFile('imobiliare')" id="btn_download_imobiliare" disabled>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Descarcă Excel
+                        </button>
+                    </div>
+                </div>
+            </div>
 
-    <script>
-        function startScraping(site) {
-            document.getElementById("status_" + site).innerText = "Scraping...";
-            fetch('/scrape/' + site)
-            .then(() => checkStatus(site));
-        }
+            <!-- Publi24 Card -->
+            <div class="scraper-card">
+                <div class="card-header publi24-header">
+                    <h2>Publi24</h2>
+                    <div class="status-badge" id="badge_publi24">Gata</div>
+                </div>
+                
+                <div class="card-body">
+                    <div class="status-section">
+                        <div class="status-icon" id="icon_publi24">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <path d="M12 6v6l4 2"/>
+                            </svg>
+                        </div>
+                        <p class="status-text" id="status_publi24">Apasă butonul pentru a începe</p>
+                    </div>
 
-        function checkStatus(site) {
-            fetch('/status/' + site)
-            .then(r => r.json())
-            .then(data => {
-                if (data.finished) {
-                    document.getElementById("status_" + site).innerText = "Terminat!";
-                } else {
-                    setTimeout(() => checkStatus(site), 2000);
-                }
-            });
-        }
-    </script>
+                    <div class="progress-bar" id="progress_publi24">
+                        <div class="progress-fill"></div>
+                    </div>
+
+                    <div class="button-group">
+                        <button class="btn btn-primary" onclick="startScraping('publi24')" id="btn_scrape_publi24">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Caută pe Publi24
+                        </button>
+                        <button class="btn btn-secondary" onclick="downloadFile('publi24')" id="btn_download_publi24" disabled>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Descarcă Excel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Preț: 50.000€ - 80.000€ | Etaj: 1-10 (fără ultimul etaj)</p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
