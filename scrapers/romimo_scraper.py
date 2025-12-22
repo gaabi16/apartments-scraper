@@ -6,8 +6,10 @@ import os
 import time
 import re
 
-URL_ROMIMO = "https://www.romimo.ro/apartamente/apartamente-2-camere/vanzare/bucuresti/sector-1/?minprice=10000&maxprice=81000"
+# TODO
+# Filter apartments based on their description paragraph
 
+URL_ROMIMO = "https://www.romimo.ro/apartamente/apartamente-2-camere/vanzare/bucuresti/sector-1/?minprice=10000&maxprice=81000"
 
 def get_driver():
     options = webdriver.ChromeOptions()
