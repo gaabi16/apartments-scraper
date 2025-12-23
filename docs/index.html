@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scraper Apartamente</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🏠 Scraper Apartamente București</h1>
+            <p class="subtitle">Găsește apartamente de 2 camere în Sectorul 1</p>
+        </header>
+
+        <div class="scrapers-grid">
+            <!-- Imobiliare.ro Card -->
+            <div class="scraper-card">
+                <div class="card-header imobiliare-header">
+                    <h2>Imobiliare.ro</h2>
+                    <div class="status-badge" id="badge_imobiliare">Gata</div>
+                </div>
+                
+                <div class="card-body">
+                    <div class="status-section">
+                        <div class="status-icon" id="icon_imobiliare">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <path d="M12 6v6l4 2"/>
+                            </svg>
+                        </div>
+                        <p class="status-text" id="status_imobiliare">Apasă butonul pentru a începe</p>
+                    </div>
+
+                    <div class="progress-bar" id="progress_imobiliare">
+                        <div class="progress-fill"></div>
+                    </div>
+
+                    <div class="button-group">
+                        <button class="btn btn-primary" onclick="startScraping('imobiliare')" id="btn_scrape_imobiliare">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Caută pe Imobiliare
+                        </button>
+                        <button class="btn btn-secondary" onclick="downloadFile('imobiliare')" id="btn_download_imobiliare" disabled>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Descarcă Excel
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Publi24 Card -->
+            <div class="scraper-card">
+                <div class="card-header publi24-header">
+                    <h2>Publi24</h2>
+                    <div class="status-badge" id="badge_publi24">Gata</div>
+                </div>
+                
+                <div class="card-body">
+                    <div class="status-section">
+                        <div class="status-icon" id="icon_publi24">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <path d="M12 6v6l4 2"/>
+                            </svg>
+                        </div>
+                        <p class="status-text" id="status_publi24">Apasă butonul pentru a începe</p>
+                    </div>
+
+                    <div class="progress-bar" id="progress_publi24">
+                        <div class="progress-fill"></div>
+                    </div>
+
+                    <div class="button-group">
+                        <button class="btn btn-primary" onclick="startScraping('publi24')" id="btn_scrape_publi24">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Caută pe Publi24
+                        </button>
+                        <button class="btn btn-secondary" onclick="downloadFile('publi24')" id="btn_download_publi24" disabled>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Descarcă Excel
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Romimo Card -->
+            <div class="scraper-card">
+                <div class="card-header romimo-header">
+                    <h2>Romimo</h2>
+                    <div class="status-badge" id="badge_romimo">Gata</div>
+                </div>
+                
+                <div class="card-body">
+                    <div class="status-section">
+                        <div class="status-icon" id="icon_romimo">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <path d="M12 6v6l4 2"/>
+                            </svg>
+                        </div>
+                        <p class="status-text" id="status_romimo">Apasă butonul pentru a începe</p>
+                    </div>
+
+                    <div class="progress-bar" id="progress_romimo">
+                        <div class="progress-fill"></div>
+                    </div>
+
+                    <div class="button-group">
+                        <button class="btn btn-primary" onclick="startScraping('romimo')" id="btn_scrape_romimo">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Caută pe Romimo
+                        </button>
+                        <button class="btn btn-secondary" onclick="downloadFile('romimo')" id="btn_download_romimo" disabled>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                                <polyline points="7 10 12 15 17 10"/>
+                                <line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Descarcă Excel
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Preț: 10.000€ - 81.000€ | Etaj: 1-10 (fără ultimul etaj)</p>
+        </footer>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>

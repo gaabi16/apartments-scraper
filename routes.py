@@ -1,9 +1,10 @@
 from flask import Blueprint, jsonify, send_file
 from scrapers.runner import status, start_scraper
+from flask_cors import CORS
 import os
 
 routes = Blueprint("routes", __name__)
-
+CORS(routes)
 
 @routes.route("/scrape/<site>")
 def scrape(site):
