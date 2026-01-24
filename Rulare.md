@@ -1,7 +1,7 @@
 # Pentru a rula aplicatia:
 
 ## Terminal 1:
-`source venv/bin/activate` apoi
+`source .venv/bin/activate` apoi
 `python3 ./app.py`
 
 ## Terminal 2:
