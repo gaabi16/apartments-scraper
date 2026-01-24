@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, send_file
+from flask import Blueprint, jsonify, send_file, request
 from scrapers.runner import status, start_scraper
 from flask_cors import CORS
 import os
@@ -11,7 +11,19 @@ def scrape(site):
     if site not in status:
         return jsonify({"error": "Unknown site"})
 
-    started = start_scraper(site)
+    # Preluam parametrii din URL (trimisi de frontend)
+    # Default: 2 camere, 10k - 81k EUR daca nu sunt specificati
+    try:
+        rooms = int(request.args.get('rooms', 2))
+        price_min = int(request.args.get('price_min', 10000))
+        price_max = int(request.args.get('price_max', 81000))
+    except ValueError:
+        return jsonify({"error": "Parametrii de filtrare invalizi"}), 400
+
+    print(f"Request scrape {site}: Camere={rooms}, Pret={price_min}-{price_max}")
+
+    # Trimitem filtrele catre runner
+    started = start_scraper(site, rooms, price_min, price_max)
     return jsonify({"started": started})
 
 
