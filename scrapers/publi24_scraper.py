@@ -6,11 +6,6 @@ import os
 import time
 import re
 
-# TODO
-# Filter apartments based on their description paragraph
-
-URL_PUBLI24 = "https://www.publi24.ro/anunturi/imobiliare/de-vanzare/apartamente/apartamente-2-camere/bucuresti/sector-1/?q=apartament+2+camere&maxprice=81000"
-
 def get_driver():
     options = webdriver.ChromeOptions()
     options.add_argument("--disable-blink-features=AutomationControlled")
@@ -21,15 +16,8 @@ def clean(text):
         return ""
     return " ".join(text.replace("\n", " ").split())
 
-def extract_first_price(price_text):
-    if not price_text:
-        return None
-    text = price_text.replace("€", "").replace("EUR", "").replace(" ", "").replace(".", "").replace(",", ".")
-    match = re.search(r"\d+(\.\d+)?", text)
-    return float(match.group()) if match else None
-
 # ----------------------------------------------------------
-#   PAGINATION PARSER — EXTRACT ALL PAGE NUMBERS
+#   PAGINATION PARSER
 # ----------------------------------------------------------
 
 def extract_all_pages(soup):
@@ -38,28 +26,21 @@ def extract_all_pages(soup):
         return [1]
 
     divs = pagination.find_all("div")
-    if len(divs) < 3:
-        return [1]
-
-    pages_div = divs[1]
-
+    # Uneori structura difera, incercam generic
     visible_pages = []
-    for li in pages_div.find_all("li"):
+    for li in pagination.find_all("li"):
         a = li.find("a")
-        if a and a.text.isdigit():
-            visible_pages.append(int(a.text))
+        if a and a.text.strip().isdigit():
+            visible_pages.append(int(a.text.strip()))
 
     if not visible_pages:
         return [1]
 
-    # Fill gaps: example [1, 2, 4, 5] → [1, 2, 3, 4, 5]
+    # Fill gaps if needed
     full_pages = []
-    for i in range(len(visible_pages) - 1):
-        start = visible_pages[i]
-        end = visible_pages[i + 1]
-        full_pages.extend(range(start, end))
-    full_pages.append(visible_pages[-1])
-
+    if visible_pages:
+        for i in range(1, max(visible_pages) + 1):
+            full_pages.append(i)
     return full_pages
 
 # ----------------------------------------------------------
@@ -67,7 +48,6 @@ def extract_all_pages(soup):
 # ----------------------------------------------------------
 
 def scrape_page(driver, page_number):
-    """Extrage toate apartamentele de pe pagina curentă și adaugă numărul paginii"""
     time.sleep(3) 
     soup = BeautifulSoup(driver.page_source, "html.parser")
     articles = soup.select("div.article-list > div.article-item")
@@ -98,7 +78,7 @@ def scrape_page(driver, page_number):
             results.append([title, link, descriere, zona, suprafata, pret, page_number])
 
         except Exception as e:
-            print("Eroare la articol:", e)
+            # print("Eroare la articol:", e)
             continue
 
     return results
@@ -107,9 +87,22 @@ def scrape_page(driver, page_number):
 #   MAIN SCRAPER
 # ----------------------------------------------------------
 
-def scrape_publi24():
+def scrape_publi24(rooms, price_min, price_max):
     driver = get_driver()
-    driver.get(URL_PUBLI24)
+    
+    # Constructie URL
+    # Daca sunt 1 camera -> 'apartamente-1-camera' (presupunere standard Publi24)
+    # Daca sunt 2 -> 'apartamente-2-camere'
+    room_slug = f"apartamente-{rooms}-camere" if rooms > 1 else "apartamente-1-camera"
+    
+    base_url = f"https://www.publi24.ro/anunturi/imobiliare/de-vanzare/apartamente/{room_slug}/bucuresti/sector-1/"
+    # q param e optional dar ajuta la filtrare, minprice/maxprice esentiale
+    query_params = f"?minprice={price_min}&maxprice={price_max}"
+    
+    start_url = base_url + query_params
+    print(f"Accessing Publi24: {start_url}")
+
+    driver.get(start_url)
     time.sleep(3)
 
     soup = BeautifulSoup(driver.page_source, "html.parser")
@@ -121,11 +114,11 @@ def scrape_publi24():
 
     for page_number in pages:
         if page_number == 1:
-            url = URL_PUBLI24
+            url = start_url
         else:
-            url = URL_PUBLI24 + f"&pag={page_number}"
+            url = start_url + f"&pag={page_number}"
 
-        print(f"Scraping pagina {page_number}: {url}")
+        print(f"Scraping pagina {page_number}")
         driver.get(url)
         page_results = scrape_page(driver, page_number)
         all_results.extend(page_results)
@@ -146,6 +139,3 @@ def scrape_publi24():
     wb.save(file_path)
     print("Fișier Publi24 salvat:", file_path)
     return file_path
-
-if __name__ == "__main__":
-    scrape_publi24()
