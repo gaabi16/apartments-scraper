@@ -10,13 +10,13 @@ status = {
 }
 
 
-def run_imobiliare():
+def run_imobiliare(rooms, price_min, price_max):
     status["imobiliare"]["running"] = True
     status["imobiliare"]["finished"] = False
     status["imobiliare"]["file"] = None
 
     try:
-        file = scrape_imobiliare()
+        file = scrape_imobiliare(rooms, price_min, price_max)
         status["imobiliare"]["file"] = file
     except Exception as e:
         print("EROARE IMOBILIARE:", e)
@@ -25,13 +25,13 @@ def run_imobiliare():
     status["imobiliare"]["finished"] = True
 
 
-def run_publi24():
+def run_publi24(rooms, price_min, price_max):
     status["publi24"]["running"] = True
     status["publi24"]["finished"] = False
     status["publi24"]["file"] = None
 
     try:
-        file = scrape_publi24()
+        file = scrape_publi24(rooms, price_min, price_max)
         status["publi24"]["file"] = file
     except Exception as e:
         print("EROARE PUBLI24:", e)
@@ -40,13 +40,13 @@ def run_publi24():
     status["publi24"]["finished"] = True
 
 
-def run_romimo():
+def run_romimo(rooms, price_min, price_max):
     status["romimo"]["running"] = True
     status["romimo"]["finished"] = False
     status["romimo"]["file"] = None
 
     try:
-        file = scrape_romimo()
+        file = scrape_romimo(rooms, price_min, price_max)
         status["romimo"]["file"] = file
     except Exception as e:
         print("EROARE ROMIMO:", e)
@@ -55,15 +55,16 @@ def run_romimo():
     status["romimo"]["finished"] = True
 
 
-def start_scraper(site_name):
+def start_scraper(site_name, rooms=2, price_min=10000, price_max=81000):
     if status[site_name]["running"]:
         return False  # deja rulează
 
+    # Pornim thread-urile cu argumentele primite
     if site_name == "imobiliare":
-        threading.Thread(target=run_imobiliare).start()
+        threading.Thread(target=run_imobiliare, args=(rooms, price_min, price_max)).start()
     elif site_name == "publi24":
-        threading.Thread(target=run_publi24).start()
+        threading.Thread(target=run_publi24, args=(rooms, price_min, price_max)).start()
     elif site_name == "romimo":
-        threading.Thread(target=run_romimo).start()
+        threading.Thread(target=run_romimo, args=(rooms, price_min, price_max)).start()
 
     return True
