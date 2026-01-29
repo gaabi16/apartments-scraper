@@ -25,8 +25,6 @@ def extract_all_pages(soup):
     if not pagination:
         return [1]
 
-    divs = pagination.find_all("div")
-    # Uneori structura difera, incercam generic
     visible_pages = []
     for li in pagination.find_all("li"):
         a = li.find("a")
@@ -36,7 +34,6 @@ def extract_all_pages(soup):
     if not visible_pages:
         return [1]
 
-    # Fill gaps if needed
     full_pages = []
     if visible_pages:
         for i in range(1, max(visible_pages) + 1):
@@ -78,7 +75,6 @@ def scrape_page(driver, page_number):
             results.append([title, link, descriere, zona, suprafata, pret, page_number])
 
         except Exception as e:
-            # print("Eroare la articol:", e)
             continue
 
     return results
@@ -87,16 +83,14 @@ def scrape_page(driver, page_number):
 #   MAIN SCRAPER
 # ----------------------------------------------------------
 
-def scrape_publi24(rooms, price_min, price_max):
+def scrape_publi24(rooms, price_min, price_max, sector):
     driver = get_driver()
     
-    # Constructie URL
-    # Daca sunt 1 camera -> 'apartamente-1-camera' (presupunere standard Publi24)
-    # Daca sunt 2 -> 'apartamente-2-camere'
     room_slug = f"apartamente-{rooms}-camere" if rooms > 1 else "apartamente-1-camera"
     
-    base_url = f"https://www.publi24.ro/anunturi/imobiliare/de-vanzare/apartamente/{room_slug}/bucuresti/sector-1/"
-    # q param e optional dar ajuta la filtrare, minprice/maxprice esentiale
+    # Modificare: Inseram sectorul dinamic in URL
+    base_url = f"https://www.publi24.ro/anunturi/imobiliare/de-vanzare/apartamente/{room_slug}/bucuresti/sector-{sector}/"
+    
     query_params = f"?minprice={price_min}&maxprice={price_max}"
     
     start_url = base_url + query_params
@@ -125,9 +119,8 @@ def scrape_publi24(rooms, price_min, price_max):
 
     driver.quit()
 
-    # Salvare Excel
     tmp = tempfile.gettempdir()
-    file_path = os.path.join(tmp, f"publi24_{int(time.time())}.xlsx")
+    file_path = os.path.join(tmp, f"publi24_s{sector}_{int(time.time())}.xlsx")
 
     wb = Workbook()
     ws = wb.active
