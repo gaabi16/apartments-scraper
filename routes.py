@@ -12,18 +12,19 @@ def scrape(site):
         return jsonify({"error": "Unknown site"})
 
     # Preluam parametrii din URL (trimisi de frontend)
-    # Default: 2 camere, 10k - 81k EUR daca nu sunt specificati
     try:
         rooms = int(request.args.get('rooms', 2))
         price_min = int(request.args.get('price_min', 10000))
         price_max = int(request.args.get('price_max', 81000))
+        # Adaugam preluarea sectorului (default Sector 1)
+        sector = int(request.args.get('sector', 1))
     except ValueError:
         return jsonify({"error": "Parametrii de filtrare invalizi"}), 400
 
-    print(f"Request scrape {site}: Camere={rooms}, Pret={price_min}-{price_max}")
+    print(f"Request scrape {site}: Camere={rooms}, Sector={sector}, Pret={price_min}-{price_max}")
 
-    # Trimitem filtrele catre runner
-    started = start_scraper(site, rooms, price_min, price_max)
+    # Trimitem filtrele (inclusiv sectorul) catre runner
+    started = start_scraper(site, rooms, price_min, price_max, sector)
     return jsonify({"started": started})
 
 
