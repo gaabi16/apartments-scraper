@@ -111,11 +111,13 @@ def scrape_page(driver, page_number):
     return results
 
 
-def scrape_romimo(rooms, price_min, price_max):
+def scrape_romimo(rooms, price_min, price_max, sector):
     driver = get_driver()
     
     room_slug = f"apartamente-{rooms}-camere" if rooms > 1 else "apartamente-1-camera"
-    base_url = f"https://www.romimo.ro/apartamente/{room_slug}/vanzare/bucuresti/sector-1/"
+    
+    # Modificare: Inseram sectorul dinamic in URL
+    base_url = f"https://www.romimo.ro/apartamente/{room_slug}/vanzare/bucuresti/sector-{sector}/"
     query_params = f"?minprice={price_min}&maxprice={price_max}"
     
     start_url = base_url + query_params
@@ -145,7 +147,7 @@ def scrape_romimo(rooms, price_min, price_max):
     driver.quit()
     
     tmp = tempfile.gettempdir()
-    file_path = os.path.join(tmp, f"romimo_{int(time.time())}.xlsx")
+    file_path = os.path.join(tmp, f"romimo_s{sector}_{int(time.time())}.xlsx")
     
     wb = Workbook()
     ws = wb.active
