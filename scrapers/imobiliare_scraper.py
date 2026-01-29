@@ -29,19 +29,16 @@ def extract_first_price(price_text):
     return float(match.group()) if match else None
 
 
-def scrape_imobiliare(rooms, price_min, price_max):
+def scrape_imobiliare(rooms, price_min, price_max, sector):
     driver = get_driver()
     
     # Constructie URL Dinamic
-    # Logic: Daca rooms=1 -> url-ul e de obicei 'vanzare-garsoniere', altfel 'vanzare-apartamente' + nr camere
-    # Totusi, pe Imobiliare.ro ruta /vanzare-apartamente/bucuresti/sector-1/1-camera functioneaza de obicei
-    
     room_str = f"{rooms}-camere" if rooms > 1 else "1-camera"
     
-    # URL de baza
-    # floor param: pastram logica originala (fara parter si ultimul etaj)
-    # price param: format min-max
-    base_url = f"https://www.imobiliare.ro/vanzare-apartamente/bucuresti/sector-1/{room_str}"
+    # Modificare: Inseram sectorul dinamic in URL
+    base_url = f"https://www.imobiliare.ro/vanzare-apartamente/bucuresti/sector-{sector}/{room_str}"
+    
+    # Parametri aditionali
     params = f"?price={price_min}-{price_max}&floor=1%2C2%2C3%2C4%2C5%2C6%2C7%2C8%2C9%2C10%2Cabove-10%2Cexcluded-last-floor"
     
     full_url = base_url + params
@@ -54,7 +51,6 @@ def scrape_imobiliare(rooms, price_min, price_max):
     driver.quit()
 
     results = []
-    # Selectoarele CSS pot varia, pastram logica din fisierul original
     cards = soup.select('div[id^="listing-"]')
 
     for card in cards:
@@ -67,19 +63,16 @@ def scrape_imobiliare(rooms, price_min, price_max):
             zona_el = card.select_one("p.w-full.truncate.font-normal.capitalize")
             zona = clean(zona_el.get_text(strip=True)) if zona_el else ""
 
-            # Filtrare suplimentara in Python pentru siguranta
             p_val = extract_first_price(price)
             
-            # Verificam daca pretul e in range-ul cerut
             if p_val is None or (p_val >= price_min and p_val <= price_max):
                 results.append([title, price, link, zona])
 
         except Exception as e:
-            # print("Eroare parse card:", e)
             continue
 
     tmp = tempfile.gettempdir()
-    file_path = os.path.join(tmp, f"imobiliare_{int(time.time())}.xlsx")
+    file_path = os.path.join(tmp, f"imobiliare_s{sector}_{int(time.time())}.xlsx")
 
     wb = Workbook()
     ws = wb.active
