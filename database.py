@@ -1,13 +1,17 @@
 import psycopg2
 from psycopg2 import sql
 import os
+from dotenv import load_dotenv  # Import nou
 
-# Configurare conexiune - MODIFICA AICI cu datele tale din pgAdmin4
-DB_HOST = "localhost"
-DB_NAME = "postgres"  # sau numele bazei tale, ex: apartments_db
-DB_USER = "postgres"
-DB_PASS = "parola_ta_pgadmin" # <-- Pune parola ta aici
-DB_PORT = "5432"
+# Incarca variabilele din fisierul .env
+load_dotenv()
+
+# --- CONFIGURARE BAZA DE DATE (citite din mediu) ---
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_NAME = os.getenv("DB_NAME")
+DB_USER = os.getenv("DB_USER")
+DB_PASS = os.getenv("DB_PASS", "") # Default string gol daca nu exista
+DB_PORT = os.getenv("DB_PORT", "5432")
 
 def get_connection():
     try:
@@ -35,20 +39,23 @@ def insert_apartment(data):
     try:
         cur = conn.cursor()
         
+        # Folosim ON CONFLICT (link) DO UPDATE pentru a actualiza pretul daca anuntul exista deja
         insert_query = """
         INSERT INTO scraped_apartments 
         (source_website, title, price, location, surface, rooms, description, link)
         VALUES (%(source)s, %(title)s, %(price)s, %(loc)s, %(surf)s, %(rooms)s, %(desc)s, %(link)s)
-        ON CONFLICT (link) DO NOTHING;
+        ON CONFLICT (link) DO UPDATE SET
+            price = EXCLUDED.price,
+            scraped_at = CURRENT_TIMESTAMP;
         """
         
-        # Mapping date dictionar la parametri query
+        # Pregatire date
         params = {
             'source': data.get('source_website'),
             'title': data.get('title'),
-            'price': data.get('price'), # Trebuie sa fie float sau None
+            'price': data.get('price'), 
             'loc': data.get('location'),
-            'surf': data.get('surface'), # Trebuie sa fie float sau None
+            'surf': data.get('surface'), 
             'rooms': data.get('rooms'),
             'desc': data.get('description', ''),
             'link': data.get('link')
