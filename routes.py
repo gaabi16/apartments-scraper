@@ -9,7 +9,7 @@ CORS(routes)
 @routes.route("/scrape/<site>")
 def scrape(site):
     if site not in status:
-        return jsonify({"error": "Unknown site"})
+        return jsonify({"error": "Unknown site"}), 404
 
     # Preluam parametrii din URL (trimisi de frontend)
     try:
@@ -21,6 +21,10 @@ def scrape(site):
     except ValueError:
         return jsonify({"error": "Parametrii de filtrare invalizi"}), 400
 
+    # VALIDARE BACKEND: Verificam logica preturilor
+    if price_min > price_max:
+        return jsonify({"error": "Prețul minim nu poate fi mai mare decât prețul maxim."}), 400
+
     print(f"Request scrape {site}: Camere={rooms}, Sector={sector}, Pret={price_min}-{price_max}")
 
     # Trimitem filtrele (inclusiv sectorul) catre runner
@@ -31,26 +35,24 @@ def scrape(site):
 @routes.route("/status/<site>")
 def get_status(site):
     if site not in status:
-        return jsonify({"error": "Unknown site"})
+        return jsonify({"error": "Unknown site"}), 404
     return jsonify(status[site])
 
 
 @routes.route("/download/<site>")
 def download(site):
     if site not in status:
-        return "Unknown site"
+        return "Unknown site", 404
 
     file_path = status[site]["file"]
 
     if not file_path or not os.path.exists(file_path):
-        return "Fisier indisponibil."
+        return "Fisier indisponibil (posibil sters sau negenerat inca).", 404
 
-    response = send_file(file_path, as_attachment=True)
-
+    # MODIFICARE: Nu mai stergem fisierul imediat dupa trimitere.
+    # Astfel, utilizatorul poate apasa "Descarca" de mai multe ori.
     try:
-        os.remove(file_path)
-        status[site]["file"] = None
-    except:
-        pass
-
-    return response
+        return send_file(file_path, as_attachment=True)
+    except Exception as e:
+        print(f"Eroare la download: {e}")
+        return "Eroare server la descarcare", 500
