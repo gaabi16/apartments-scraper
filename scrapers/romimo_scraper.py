@@ -5,68 +5,51 @@ import tempfile
 import os
 import time
 import re
+import sys
+
+# Adaugam calea parinte pentru a importa database.py
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import database
 
 def get_driver():
     options = webdriver.ChromeOptions()
     options.add_argument("--disable-blink-features=AutomationControlled")
     return webdriver.Chrome(options=options)
 
-
 def clean(text):
-    if not text:
-        return ""
+    if not text: return ""
     return " ".join(text.replace("\n", " ").split())
 
-
-def extract_price(price_text):
-    if not price_text:
-        return ""
+def extract_price_val(price_text):
+    if not price_text: return None
     text = price_text.replace("EUR", "").replace("€", "").replace(" ", "").replace(".", "").replace(",", ".")
     match = re.search(r"\d+(\.\d+)?", text)
-    return match.group() if match else price_text
+    return float(match.group()) if match else None
 
-
-def extract_surface(short_info_text):
-    if not short_info_text:
-        return ""
+def extract_surface_val(short_info_text):
+    if not short_info_text: return None
     match = re.search(r"(\d+)\s*m", short_info_text)
-    return match.group(1) if match else ""
-
-
-def extract_price_per_sqm(short_info_text):
-    if not short_info_text:
-        return ""
-    match = re.search(r"(\d+)\s*EUR/m", short_info_text)
-    return match.group(1) if match else ""
-
+    return float(match.group(1)) if match else None
 
 def extract_all_pages(soup):
     pagination = soup.select_one("ul.pagination")
-    if not pagination:
-        return [1]
-    
+    if not pagination: return [1]
     page_numbers = []
     for li in pagination.find_all("li"):
         a = li.find("a")
         if a and a.text.strip().isdigit():
             page_numbers.append(int(a.text.strip()))
-    
-    if not page_numbers:
-        return [1]
-    
-    return list(range(1, max(page_numbers) + 1))
+    return list(range(1, max(page_numbers) + 1)) if page_numbers else [1]
 
-
-def scrape_page(driver, page_number):
+def scrape_page(driver, page_number, rooms):
     time.sleep(3)
     soup = BeautifulSoup(driver.page_source, "html.parser")
-    
     article_list = soup.select_one("div.article-list")
-    if not article_list:
-        return []
+    if not article_list: return [], []
     
     articles = article_list.select("div.article-item")
-    results = []
+    excel_results = []
+    db_results = []
     
     for article in articles:
         try:
@@ -82,41 +65,47 @@ def scrape_page(driver, page_number):
             
             price_el = article.select_one("span.article-price")
             price_raw = clean(price_el.get_text()) if price_el else ""
-            price = extract_price(price_raw)
+            price_val = extract_price_val(price_raw)
             
             short_info_el = article.select_one("p.article-short-info span.article-lbl-txt")
             short_info_text = short_info_el.get_text() if short_info_el else ""
             
-            surface = extract_surface(short_info_text)
-            price_per_sqm = extract_price_per_sqm(short_info_text)
+            surface_val = extract_surface_val(short_info_text)
+            surface_str = str(int(surface_val)) if surface_val else ""
+            
+            match_sqm = re.search(r"(\d+)\s*EUR/m", short_info_text)
+            price_per_sqm = match_sqm.group(1) if match_sqm else ""
             
             date_el = article.select_one("p.article-date span")
             date = clean(date_el.get_text()) if date_el else ""
             
-            results.append([
-                title,
-                price,
-                price_per_sqm,
-                surface,
-                location,
-                description,
-                date,
-                link,
-                page_number
+            # Excel
+            excel_results.append([
+                title, price_raw, price_per_sqm, surface_str,
+                location, description, date, link, page_number
             ])
+            
+            # DB
+            db_results.append({
+                'source_website': 'Romimo',
+                'title': title,
+                'price': price_val,
+                'location': location,
+                'surface': surface_val,
+                'rooms': rooms,
+                'description': description,
+                'link': link
+            })
             
         except Exception as e:
             continue
     
-    return results
-
+    return excel_results, db_results
 
 def scrape_romimo(rooms, price_min, price_max, sector):
     driver = get_driver()
     
     room_slug = f"apartamente-{rooms}-camere" if rooms > 1 else "apartamente-1-camera"
-    
-    # Modificare: Inseram sectorul dinamic in URL
     base_url = f"https://www.romimo.ro/apartamente/{room_slug}/vanzare/bucuresti/sector-{sector}/"
     query_params = f"?minprice={price_min}&maxprice={price_max}"
     
@@ -128,10 +117,10 @@ def scrape_romimo(rooms, price_min, price_max, sector):
     
     soup = BeautifulSoup(driver.page_source, "html.parser")
     pages = extract_all_pages(soup)
-    
     print(f"Pagini găsite: {pages}")
     
-    all_results = []
+    all_excel = []
+    all_db = []
     
     for page_number in pages:
         if page_number == 1:
@@ -141,25 +130,27 @@ def scrape_romimo(rooms, price_min, price_max, sector):
         
         print(f"Scraping pagina {page_number}")
         driver.get(url)
-        page_results = scrape_page(driver, page_number)
-        all_results.extend(page_results)
+        ex_res, db_res = scrape_page(driver, page_number, rooms)
+        all_excel.extend(ex_res)
+        all_db.extend(db_res)
     
     driver.quit()
     
+    # Salvare DB
+    print(f"Se salveaza {len(all_db)} anunturi Romimo in DB...")
+    database.insert_batch_apartments(all_db)
+    
+    # Salvare Excel
     tmp = tempfile.gettempdir()
     file_path = os.path.join(tmp, f"romimo_s{sector}_{int(time.time())}.xlsx")
-    
     wb = Workbook()
     ws = wb.active
     ws.append([
         "Titlu", "Pret (EUR)", "Pret/mp (EUR)", "Suprafata (mp)",
         "Locatie", "Descriere", "Data", "Link", "Pagina"
     ])
-    
-    for r in all_results:
+    for r in all_excel:
         ws.append(r)
-    
     wb.save(file_path)
-    print(f"Fișier Romimo salvat: {file_path}")
     
     return file_path
