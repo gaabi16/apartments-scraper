@@ -1,17 +1,16 @@
 -- TABEL: scraped_apartments
--- Ruleaza acest script conectat la baza de date 'apartments_vatty'
+-- Structura actualizata: LINK este Primary Key (fara coloana ID)
 
 CREATE TABLE IF NOT EXISTS scraped_apartments (
-    id SERIAL PRIMARY KEY,
+    link TEXT PRIMARY KEY, -- Link devine identificatorul unic principal
     source_website VARCHAR(50) NOT NULL, -- ex: 'Imobiliare', 'Publi24'
     title TEXT,
-    price NUMERIC(10, 2), -- Pret numeric pentru calcule
+    price NUMERIC(10, 2),
     currency VARCHAR(10) DEFAULT 'EUR',
     location TEXT,
-    surface NUMERIC(10, 2), -- Suprafata in mp
+    surface NUMERIC(10, 2),
     rooms INTEGER,
     description TEXT,
-    link TEXT UNIQUE, -- Link unic pentru a preveni duplicatele
     scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
