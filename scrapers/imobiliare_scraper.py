@@ -9,7 +9,7 @@ import sys
 
 # Adaugam calea parinte pentru a putea importa database.py
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import database
+import Database.database as database
 
 def get_driver():
     options = webdriver.ChromeOptions()
