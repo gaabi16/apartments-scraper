@@ -37,7 +37,10 @@ def extract_all_pages(soup):
             visible_pages.append(int(a.text.strip()))
     return list(range(1, max(visible_pages) + 1)) if visible_pages else [1]
 
-def scrape_page_data(driver, page_number, rooms):
+def scrape_page_data(driver, page_number, rooms, seen_links):
+    """
+    Primeste set-ul seen_links ca argument pentru a verifica unicitatea globala.
+    """
     time.sleep(3) 
     soup = BeautifulSoup(driver.page_source, "html.parser")
     articles = soup.select("div.article-list > div.article-item")
@@ -48,12 +51,18 @@ def scrape_page_data(driver, page_number, rooms):
     for article in articles:
         try:
             title_el = article.select_one("h2.article-title a")
-            title = clean(title_el.get_text()) if title_el else ""
             link = title_el["href"] if title_el else ""
+            
+            # 1. VERIFICARE UNICITATE
+            if not link or link in seen_links:
+                continue
+            
+            # Marcam link-ul ca vazut
+            seen_links.add(link)
 
+            title = clean(title_el.get_text()) if title_el else ""
             desc_el = article.select_one("p.article-description")
             descriere = clean(desc_el.get_text()) if desc_el else ""
-
             loc_el = article.select_one("p.article-location span")
             zona = clean(loc_el.get_text()) if loc_el else ""
 
@@ -109,6 +118,9 @@ def scrape_publi24(rooms, price_min, price_max, sector):
 
     all_excel = []
     all_db = []
+    
+    # Initializam set-ul de unicitate aici
+    seen_links = set()
 
     for page_number in pages:
         if page_number == 1:
@@ -118,14 +130,15 @@ def scrape_publi24(rooms, price_min, price_max, sector):
 
         print(f"Scraping pagina {page_number}")
         driver.get(url)
-        ex_res, db_res = scrape_page_data(driver, page_number, rooms)
+        # Pasam seen_links
+        ex_res, db_res = scrape_page_data(driver, page_number, rooms, seen_links)
         all_excel.extend(ex_res)
         all_db.extend(db_res)
 
     driver.quit()
 
-    # Salvare in DB
-    print(f"Se salveaza {len(all_db)} anunturi Publi24 in DB...")
+    # Salvare in DB (doar unicele)
+    print(f"Se salveaza {len(all_db)} anunturi UNICE Publi24 in DB...")
     database.insert_batch_apartments(all_db)
 
     # Salvare Excel
