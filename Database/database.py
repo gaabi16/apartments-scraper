@@ -1,16 +1,14 @@
 import psycopg2
 from psycopg2 import sql
 import os
-from dotenv import load_dotenv  # Import nou
+from dotenv import load_dotenv
 
-# Incarca variabilele din fisierul .env
 load_dotenv()
 
-# --- CONFIGURARE BAZA DE DATE (citite din mediu) ---
 DB_HOST = os.getenv("DB_HOST", "localhost")
 DB_NAME = os.getenv("DB_NAME")
 DB_USER = os.getenv("DB_USER")
-DB_PASS = os.getenv("DB_PASS", "") # Default string gol daca nu exista
+DB_PASS = os.getenv("DB_PASS", "")
 DB_PORT = os.getenv("DB_PORT", "5432")
 
 def get_connection():
@@ -28,10 +26,6 @@ def get_connection():
         return None
 
 def insert_apartment(data):
-    """
-    data trebuie sa fie un dictionar cu cheile:
-    source_website, title, price, location, surface, rooms, description, link
-    """
     conn = get_connection()
     if not conn:
         return
@@ -39,17 +33,18 @@ def insert_apartment(data):
     try:
         cur = conn.cursor()
         
-        # Folosim ON CONFLICT (link) DO UPDATE pentru a actualiza pretul daca anuntul exista deja
+        # Inseram doar daca nu exista combinatia (Titlu, Pret, Locatie, Suprafata)
+        # Link-ul este actualizat doar daca e nevoie, dar pastram unicitatea anuntului fizic
         insert_query = """
         INSERT INTO scraped_apartments 
         (source_website, title, price, location, surface, rooms, description, link)
         VALUES (%(source)s, %(title)s, %(price)s, %(loc)s, %(surf)s, %(rooms)s, %(desc)s, %(link)s)
-        ON CONFLICT (link) DO UPDATE SET
-            price = EXCLUDED.price,
-            scraped_at = CURRENT_TIMESTAMP;
+        ON CONFLICT (title, price, location, surface) 
+        DO UPDATE SET
+            scraped_at = CURRENT_TIMESTAMP,
+            link = EXCLUDED.link; -- Actualizam linkul cu cel mai recent gasit (optional)
         """
         
-        # Pregatire date
         params = {
             'source': data.get('source_website'),
             'title': data.get('title'),
@@ -71,6 +66,5 @@ def insert_apartment(data):
             conn.close()
 
 def insert_batch_apartments(apartments_list):
-    """Insereaza o lista de dictionare."""
     for apt in apartments_list:
         insert_apartment(apt)
