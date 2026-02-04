@@ -7,7 +7,6 @@ import time
 import re
 import sys
 
-# Adaugam calea parinte pentru a importa database.py
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import Database.database as database
 
@@ -17,8 +16,7 @@ def get_driver():
     return webdriver.Chrome(options=options)
 
 def clean(text):
-    if not text:
-        return ""
+    if not text: return ""
     return " ".join(text.replace("\n", " ").split())
 
 def extract_numeric_price(price_text):
@@ -37,9 +35,9 @@ def extract_all_pages(soup):
             visible_pages.append(int(a.text.strip()))
     return list(range(1, max(visible_pages) + 1)) if visible_pages else [1]
 
-def scrape_page_data(driver, page_number, rooms, seen_links):
+def scrape_page_data(driver, page_number, rooms, seen_fingerprints):
     """
-    Primeste set-ul seen_links ca argument pentru a verifica unicitatea globala.
+    Folosim seen_fingerprints pentru a identifica unicitatea anuntului dupa continut, nu dupa link.
     """
     time.sleep(3) 
     soup = BeautifulSoup(driver.page_source, "html.parser")
@@ -53,18 +51,14 @@ def scrape_page_data(driver, page_number, rooms, seen_links):
             title_el = article.select_one("h2.article-title a")
             link = title_el["href"] if title_el else ""
             
-            # 1. VERIFICARE UNICITATE
-            if not link or link in seen_links:
-                continue
-            
-            # Marcam link-ul ca vazut
-            seen_links.add(link)
-
             title = clean(title_el.get_text()) if title_el else ""
             desc_el = article.select_one("p.article-description")
             descriere = clean(desc_el.get_text()) if desc_el else ""
             loc_el = article.select_one("p.article-location span")
             zona = clean(loc_el.get_text()) if loc_el else ""
+            price_el = article.select_one("div.article-info span.article-price")
+            pret_str = clean(price_el.get_text()) if price_el else ""
+            pret_val = extract_numeric_price(pret_str)
 
             short_info_el = article.select_one("p.article-short-info span.article-lbl-txt")
             suprafata_str = ""
@@ -76,14 +70,18 @@ def scrape_page_data(driver, page_number, rooms, seen_links):
                     suprafata_str = match.group(1)
                     suprafata_val = float(match.group(1))
 
-            price_el = article.select_one("div.article-info span.article-price")
-            pret_str = clean(price_el.get_text()) if price_el else ""
-            pret_val = extract_numeric_price(pret_str)
+            # --- LOGICA DE UNICITATE BAZATA PE CONTINUT ---
+            # Cream o amprenta unica: titlu + pret + zona + suprafata
+            fingerprint = f"{title}_{pret_val}_{zona}_{suprafata_val}"
+            
+            if fingerprint in seen_fingerprints:
+                continue # Este duplicat de continut, ignoram
+            
+            seen_fingerprints.add(fingerprint)
+            # ----------------------------------------------
 
-            # Excel Row
             excel_results.append([title, link, descriere, zona, suprafata_str, pret_str, page_number])
             
-            # DB Dictionary
             db_results.append({
                 'source_website': 'Publi24',
                 'title': title,
@@ -119,8 +117,8 @@ def scrape_publi24(rooms, price_min, price_max, sector):
     all_excel = []
     all_db = []
     
-    # Initializam set-ul de unicitate aici
-    seen_links = set()
+    # Set pentru amprente unice de continut
+    seen_fingerprints = set()
 
     for page_number in pages:
         if page_number == 1:
@@ -130,18 +128,15 @@ def scrape_publi24(rooms, price_min, price_max, sector):
 
         print(f"Scraping pagina {page_number}")
         driver.get(url)
-        # Pasam seen_links
-        ex_res, db_res = scrape_page_data(driver, page_number, rooms, seen_links)
+        ex_res, db_res = scrape_page_data(driver, page_number, rooms, seen_fingerprints)
         all_excel.extend(ex_res)
         all_db.extend(db_res)
 
     driver.quit()
 
-    # Salvare in DB (doar unicele)
-    print(f"Se salveaza {len(all_db)} anunturi UNICE Publi24 in DB...")
+    print(f"Se salveaza {len(all_db)} anunturi UNICE (continut) Publi24 in DB...")
     database.insert_batch_apartments(all_db)
 
-    # Salvare Excel
     tmp = tempfile.gettempdir()
     file_path = os.path.join(tmp, f"publi24_s{sector}_{int(time.time())}.xlsx")
     wb = Workbook()
