@@ -7,7 +7,6 @@ import time
 import re
 import sys
 
-# Adaugam calea parinte pentru a importa database.py
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import Database.database as database
 
@@ -41,10 +40,7 @@ def extract_all_pages(soup):
             page_numbers.append(int(a.text.strip()))
     return list(range(1, max(page_numbers) + 1)) if page_numbers else [1]
 
-def scrape_page(driver, page_number, rooms, seen_links):
-    """
-    Primeste seen_links pentru a filtra duplicatele.
-    """
+def scrape_page(driver, page_number, rooms, seen_fingerprints):
     time.sleep(3)
     soup = BeautifulSoup(driver.page_source, "html.parser")
     article_list = soup.select_one("div.article-list")
@@ -59,13 +55,6 @@ def scrape_page(driver, page_number, rooms, seen_links):
             title_el = article.select_one("h2.article-title a")
             link = title_el["href"] if title_el and title_el.has_attr("href") else ""
             
-            # 1. VERIFICARE UNICITATE
-            if not link or link in seen_links:
-                continue
-            
-            # Marcam ca vazut
-            seen_links.add(link)
-
             title = clean(title_el.get_text()) if title_el else ""
             desc_el = article.select_one("p.article-description")
             description = clean(desc_el.get_text()) if desc_el else ""
@@ -89,13 +78,18 @@ def scrape_page(driver, page_number, rooms, seen_links):
             date_el = article.select_one("p.article-date span")
             date = clean(date_el.get_text()) if date_el else ""
             
-            # Excel
+            # --- FINGERPRINT CHECK ---
+            fingerprint = f"{title}_{price_val}_{location}_{surface_val}"
+            if fingerprint in seen_fingerprints:
+                continue
+            seen_fingerprints.add(fingerprint)
+            # -------------------------
+            
             excel_results.append([
                 title, price_raw, price_per_sqm, surface_str,
                 location, description, date, link, page_number
             ])
             
-            # DB
             db_results.append({
                 'source_website': 'Romimo',
                 'title': title,
@@ -131,9 +125,7 @@ def scrape_romimo(rooms, price_min, price_max, sector):
     
     all_excel = []
     all_db = []
-    
-    # Initializam set-ul de unicitate
-    seen_links = set()
+    seen_fingerprints = set()
     
     for page_number in pages:
         if page_number == 1:
@@ -143,18 +135,15 @@ def scrape_romimo(rooms, price_min, price_max, sector):
         
         print(f"Scraping pagina {page_number}")
         driver.get(url)
-        # Pasam seen_links
-        ex_res, db_res = scrape_page(driver, page_number, rooms, seen_links)
+        ex_res, db_res = scrape_page(driver, page_number, rooms, seen_fingerprints)
         all_excel.extend(ex_res)
         all_db.extend(db_res)
     
     driver.quit()
     
-    # Salvare DB
     print(f"Se salveaza {len(all_db)} anunturi UNICE Romimo in DB...")
     database.insert_batch_apartments(all_db)
     
-    # Salvare Excel
     tmp = tempfile.gettempdir()
     file_path = os.path.join(tmp, f"romimo_s{sector}_{int(time.time())}.xlsx")
     wb = Workbook()
