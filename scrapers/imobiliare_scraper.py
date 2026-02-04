@@ -7,14 +7,12 @@ import time
 import re
 import sys
 
-# Adaugam calea parinte pentru a putea importa database.py
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import Database.database as database
 
 def get_driver():
     options = webdriver.ChromeOptions()
     options.add_argument("--disable-blink-features=AutomationControlled")
-    # options.add_argument("--headless") # Poti decomenta daca vrei sa ruleze in fundal
     return webdriver.Chrome(options=options)
 
 def clean(text):
@@ -40,19 +38,17 @@ def scrape_imobiliare(rooms, price_min, price_max, sector):
     print(f"Accessing Imobiliare URL: {full_url}")
     
     driver.get(full_url)
-    time.sleep(5) # Asteptam incarcarea initiala
+    time.sleep(5)
 
-    # --- LOGICA SCROLL ---
-    # Imobiliare incarca anunturile pe masura ce dai scroll. Trebuie sa fortam incarcarea.
+    # Scroll Logic
     last_height = driver.execute_script("return document.body.scrollHeight")
     while True:
         driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(3) # Asteptam sa incarce noile carduri
+        time.sleep(3)
         new_height = driver.execute_script("return document.body.scrollHeight")
         if new_height == last_height:
             break
         last_height = new_height
-    # ---------------------
 
     soup = BeautifulSoup(driver.page_source, "html.parser")
     driver.quit()
@@ -60,8 +56,8 @@ def scrape_imobiliare(rooms, price_min, price_max, sector):
     results_excel = []
     results_db = []
     
-    # Set pentru a asigura unicitatea in timpul rularii curente
-    seen_links = set()
+    # Set pentru amprente unice
+    seen_fingerprints = set()
 
     cards = soup.select('div[id^="listing-"]')
     print(f"Carduri gasite (brut): {len(cards)}")
@@ -73,29 +69,27 @@ def scrape_imobiliare(rooms, price_min, price_max, sector):
             if link and not link.startswith("http"):
                 link = "https://www.imobiliare.ro" + link
             
-            # 1. VERIFICARE UNICITATE
-            if not link or link in seen_links:
-                continue
-            
-            # Adaugam link-ul in set pentru a nu-l mai procesa a doua oara
-            seen_links.add(link)
-
             title = clean(card.select_one("span.relative").get_text(strip=True))
             price_str = clean(card.select_one('[data-cy="card-price"]').get_text(strip=True))
             
             zona_el = card.select_one("p.w-full.truncate.font-normal.capitalize")
             zona = clean(zona_el.get_text(strip=True)) if zona_el else ""
 
-            surface_val = None # Parsarea suprafetei e complexa pe Imobiliare, lasam None momentan
+            surface_val = None 
             p_val = extract_first_price(price_str)
             
-            # Filtrare suplimentara de siguranta pentru pret
+            # --- FINGERPRINT ---
+            # Chiar daca surface e None, ajuta combinatia titlu+pret+zona
+            fingerprint = f"{title}_{p_val}_{zona}_{surface_val}"
+            
+            if fingerprint in seen_fingerprints:
+                continue
+            seen_fingerprints.add(fingerprint)
+            # -------------------
+            
             if p_val is None or (p_val >= price_min and p_val <= price_max):
-                
-                # Lista pentru Excel
                 results_excel.append([title, price_str, link, zona])
                 
-                # Lista pentru DB
                 db_item = {
                     'source_website': 'Imobiliare.ro',
                     'title': title,
@@ -109,14 +103,11 @@ def scrape_imobiliare(rooms, price_min, price_max, sector):
                 results_db.append(db_item)
 
         except Exception as e:
-            print(f"Eroare parsing card Imobiliare: {e}")
             continue
 
-    # Acum salvam doar listele unice
     print(f"Se salveaza {len(results_db)} anunturi UNICE in baza de date...")
     database.insert_batch_apartments(results_db)
 
-    # Generare Excel
     tmp = tempfile.gettempdir()
     file_path = os.path.join(tmp, f"imobiliare_s{sector}_{int(time.time())}.xlsx")
 
