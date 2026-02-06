@@ -15,20 +15,22 @@ def get_driver():
     options.add_argument("--disable-blink-features=AutomationControlled")
     return webdriver.Chrome(options=options)
 
-def clean(text):
-    if not text: return ""
-    return " ".join(text.replace("\n", " ").split())
+def clean_text(text):
+    if not text: return None
+    cleaned = " ".join(text.replace("\n", " ").split())
+    return cleaned if cleaned else None
 
-def extract_price_val(price_text):
-    if not price_text: return None
-    text = price_text.replace("EUR", "").replace("€", "").replace(" ", "").replace(".", "").replace(",", ".")
-    match = re.search(r"\d+(\.\d+)?", text)
-    return float(match.group()) if match else None
+def extract_price(text):
+    if not text: return None
+    digits = re.sub(r'[^\d]', '', text)
+    return int(digits) if digits else None
 
-def extract_surface_val(short_info_text):
-    if not short_info_text: return None
-    match = re.search(r"(\d+)\s*m", short_info_text)
-    return float(match.group(1)) if match else None
+def extract_surface(text):
+    if not text: return None
+    match = re.search(r'(\d+(?:[.,]\d+)?)\s*(?:m|mp)', text, re.IGNORECASE)
+    if match:
+        return float(match.group(1).replace(',', '.'))
+    return None
 
 def extract_all_pages(soup):
     pagination = soup.select_one("ul.pagination")
@@ -52,44 +54,46 @@ def scrape_page(driver, page_number, rooms, seen_fingerprints):
     
     for article in articles:
         try:
+            # 1. LINK & TITLU
             title_el = article.select_one("h2.article-title a")
             link = title_el["href"] if title_el and title_el.has_attr("href") else ""
+            title = clean_text(title_el.get_text()) if title_el else None
             
-            title = clean(title_el.get_text()) if title_el else ""
+            # 2. DESCRIERE
             desc_el = article.select_one("p.article-description")
-            description = clean(desc_el.get_text()) if desc_el else ""
+            description = clean_text(desc_el.get_text()) if desc_el else None
             
+            # 3. LOCATIE
             loc_el = article.select_one("p.article-location span")
-            location = clean(loc_el.get_text()) if loc_el else ""
+            location = clean_text(loc_el.get_text()) if loc_el else None
             
+            # 4. PRET
             price_el = article.select_one("span.article-price")
-            price_raw = clean(price_el.get_text()) if price_el else ""
-            price_val = extract_price_val(price_raw)
+            price_raw = price_el.get_text() if price_el else ""
+            price_val = extract_price(price_raw)
             
+            # 5. SUPRAFATA
             short_info_el = article.select_one("p.article-short-info span.article-lbl-txt")
             short_info_text = short_info_el.get_text() if short_info_el else ""
+            surface_val = extract_surface(short_info_text)
             
-            surface_val = extract_surface_val(short_info_text)
-            surface_str = str(int(surface_val)) if surface_val else ""
-            
-            match_sqm = re.search(r"(\d+)\s*EUR/m", short_info_text)
-            price_per_sqm = match_sqm.group(1) if match_sqm else ""
-            
-            date_el = article.select_one("p.article-date span")
-            date = clean(date_el.get_text()) if date_el else ""
-            
-            # --- FINGERPRINT CHECK ---
-            fingerprint = f"{title}_{price_val}_{location}_{surface_val}"
+            # --- UNICITATE ---
+            fingerprint = f"{title}_{location}_{price_val}_{surface_val}"
             if fingerprint in seen_fingerprints:
                 continue
             seen_fingerprints.add(fingerprint)
-            # -------------------------
             
+            # Lista Excel
             excel_results.append([
-                title, price_raw, price_per_sqm, surface_str,
-                location, description, date, link, page_number
+                title, 
+                description, 
+                price_val, 
+                location, 
+                surface_val, 
+                link
             ])
             
+            # Obiect DB
             db_results.append({
                 'source_website': 'Romimo',
                 'title': title,
@@ -120,6 +124,7 @@ def scrape_romimo(rooms, price_min, price_max, sector):
     time.sleep(4)
     
     soup = BeautifulSoup(driver.page_source, "html.parser")
+    # Vizitare toate paginile
     pages = extract_all_pages(soup)
     print(f"Pagini găsite: {pages}")
     
@@ -128,13 +133,10 @@ def scrape_romimo(rooms, price_min, price_max, sector):
     seen_fingerprints = set()
     
     for page_number in pages:
-        if page_number == 1:
-            url = start_url
-        else:
-            url = start_url + f"&pag={page_number}"
+        current_url = start_url if page_number == 1 else start_url + f"&pag={page_number}"
         
         print(f"Scraping pagina {page_number}")
-        driver.get(url)
+        driver.get(current_url)
         ex_res, db_res = scrape_page(driver, page_number, rooms, seen_fingerprints)
         all_excel.extend(ex_res)
         all_db.extend(db_res)
@@ -148,10 +150,7 @@ def scrape_romimo(rooms, price_min, price_max, sector):
     file_path = os.path.join(tmp, f"romimo_s{sector}_{int(time.time())}.xlsx")
     wb = Workbook()
     ws = wb.active
-    ws.append([
-        "Titlu", "Pret (EUR)", "Pret/mp (EUR)", "Suprafata (mp)",
-        "Locatie", "Descriere", "Data", "Link", "Pagina"
-    ])
+    ws.append(["Titlu", "Descriere", "Pret", "Locatie", "Suprafata", "Link"])
     for r in all_excel:
         ws.append(r)
     wb.save(file_path)
