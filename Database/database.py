@@ -1,70 +1,75 @@
-import psycopg2
-from psycopg2 import sql
 import os
-from dotenv import load_dotenv
+import psycopg2
+from psycopg2.extras import execute_values
+from urllib.parse import urlparse
 
-load_dotenv()
-
-DB_HOST = os.getenv("DB_HOST", "localhost")
-DB_NAME = os.getenv("DB_NAME")
-DB_USER = os.getenv("DB_USER")
-DB_PASS = os.getenv("DB_PASS", "")
-DB_PORT = os.getenv("DB_PORT", "5432")
+# Configurare conexiune (presupunem URL-ul din environment sau default)
+DB_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/apartments_db")
 
 def get_connection():
-    try:
-        conn = psycopg2.connect(
-            host=DB_HOST,
-            database=DB_NAME,
-            user=DB_USER,
-            password=DB_PASS,
-            port=DB_PORT
-        )
-        return conn
-    except Exception as e:
-        print(f"Eroare la conectarea DB: {e}")
-        return None
+    return psycopg2.connect(DB_URL)
 
-def insert_apartment(data):
+def init_db():
     conn = get_connection()
-    if not conn:
-        return
-
-    try:
-        cur = conn.cursor()
-        
-        # Inseram doar daca nu exista combinatia (Titlu, Pret, Locatie, Suprafata)
-        # Link-ul este actualizat doar daca e nevoie, dar pastram unicitatea anuntului fizic
-        insert_query = """
-        INSERT INTO scraped_apartments 
-        (source_website, title, price, location, surface, rooms, description, link)
-        VALUES (%(source)s, %(title)s, %(price)s, %(loc)s, %(surf)s, %(rooms)s, %(desc)s, %(link)s)
-        ON CONFLICT (title, price, location, surface) 
-        DO UPDATE SET
-            scraped_at = CURRENT_TIMESTAMP,
-            link = EXCLUDED.link; -- Actualizam linkul cu cel mai recent gasit (optional)
-        """
-        
-        params = {
-            'source': data.get('source_website'),
-            'title': data.get('title'),
-            'price': data.get('price'), 
-            'loc': data.get('location'),
-            'surf': data.get('surface'), 
-            'rooms': data.get('rooms'),
-            'desc': data.get('description', ''),
-            'link': data.get('link')
-        }
-        
-        cur.execute(insert_query, params)
-        conn.commit()
-        cur.close()
-    except Exception as e:
-        print(f"Eroare la inserare in DB: {e}")
-    finally:
-        if conn:
-            conn.close()
+    cur = conn.cursor()
+    # Citim fisierul SQL, calea relativa
+    sql_path = os.path.join(os.path.dirname(__file__), 'init_db.sql')
+    with open(sql_path, 'r') as f:
+        cur.execute(f.read())
+    conn.commit()
+    cur.close()
+    conn.close()
+    print("Database initialized.")
 
 def insert_batch_apartments(apartments_list):
-    for apt in apartments_list:
-        insert_apartment(apt)
+    """
+    Insereaza o lista de dictionare in baza de date.
+    Foloseste ON CONFLICT DO UPDATE pentru a evita duplicatele,
+    dar actualizeaza timestamp-ul si link-ul.
+    """
+    if not apartments_list:
+        return
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    query = """
+        INSERT INTO scraped_apartments 
+        (source_website, title, price, location, surface, rooms, description, link, floor, contact_name, phone_number)
+        VALUES %s
+        ON CONFLICT (title, price, location, surface) 
+        DO UPDATE SET 
+            scraped_at = CURRENT_TIMESTAMP,
+            link = EXCLUDED.link,
+            description = EXCLUDED.description,
+            contact_name = EXCLUDED.contact_name,
+            phone_number = EXCLUDED.phone_number
+    """
+
+    # Pregatim valorile pentru executie in batch
+    values = []
+    for app in apartments_list:
+        values.append((
+            app.get('source_website'),
+            app.get('title'),
+            app.get('price'),
+            app.get('location'),
+            app.get('surface'),
+            app.get('rooms'),
+            app.get('description'),
+            app.get('link'),
+            app.get('floor'),
+            app.get('contact_name'),
+            app.get('phone_number')
+        ))
+
+    try:
+        execute_values(cur, query, values)
+        conn.commit()
+        print(f"Successfully inserted/updated {len(values)} records.")
+    except Exception as e:
+        print(f"Database Error: {e}")
+        conn.rollback()
+    finally:
+        cur.close()
+        conn.close()
