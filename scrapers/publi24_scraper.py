@@ -13,260 +13,237 @@ import Database.database as database
 
 def clean_text(text):
     if not text: return None
+    # Curata spatii multiple si caractere invizibile
     cleaned = " ".join(text.replace("\n", " ").split())
-    return cleaned if cleaned else None
+    return cleaned.strip() if cleaned else None
 
 def extract_price(text):
-    if not text: return None
+    if not text: return 0
+    # Publi24: "78 900 EUR" -> 78900
+    text = text.replace(" ", "").replace(".", "")
     digits = re.sub(r'[^\d]', '', text)
-    if not digits: return None
+    if not digits: return 0
     return int(digits)
 
 def extract_surface(text):
-    if not text: return None
-    # Cautam pattern: 50 mp, 50.5 m2 etc.
-    match = re.search(r'(\d+(?:[.,]\d+)?)\s*(?:mp|m2|metri)', text, re.IGNORECASE)
+    if not text: return 0.0
+    # Format: "50 m2" sau "50,5 mp"
+    text = text.replace(",", ".")
+    match = re.search(r'(\d+(?:[.]\d+)?)\s*(?:m|mp)', text, re.IGNORECASE)
     if match:
-        val_str = match.group(1).replace(',', '.')
         try:
-            return float(val_str)
+            return float(match.group(1))
         except:
-            return None
-    return None
+            return 0.0
+    # Fallback doar cifre
+    digits = re.search(r'(\d+)', text)
+    if digits:
+        return float(digits.group(1))
+    return 0.0
 
 def scrape_detail_page(context, url):
     """
-    Deschide o pagină nouă (tab) pentru detaliile anunțului,
-    extrage datele și o închide.
+    Intră pe pagina anunțului și ia toate detaliile.
     """
     data = {
+        "title": None,
+        "price": 0,
+        "location": None,
         "description": None,
         "floor": None,
         "contact_name": None,
         "phone_number": None,
         "rooms": None,
-        "surface": None
+        "surface": 0.0
     }
     
     page = context.new_page()
     try:
-        page.goto(url, wait_until="domcontentloaded", timeout=60000)
-        # Pauza mica
-        page.wait_for_timeout(random.randint(500, 1500))
+        page.goto(url, wait_until="domcontentloaded", timeout=45000)
+        page.wait_for_timeout(random.randint(1000, 2000))
 
-        # --- 1. Extragere Telefon ---
+        # 1. Titlu & Pret & Locatie (Le luam direct din pagina detaliu pt siguranta)
         try:
-            # Selector buton telefon Publi24
-            # <div class="show-phone-number" data-action="phone">
-            phone_btn_sel = ".show-phone-number button.btn-show-phone"
-            if page.is_visible(phone_btn_sel):
-                # Verificam daca e deja afisat sau trebuie click
-                if not page.locator(".telnumber").is_visible():
-                    page.click(phone_btn_sel)
-                    page.wait_for_timeout(1000)
+            # Titlu
+            title_el = page.locator("h1").first
+            if title_el.is_visible():
+                data["title"] = clean_text(title_el.inner_text())
+            
+            # Pret
+            price_el = page.locator(".product-price span").first
+            if price_el.is_visible():
+                data["price"] = extract_price(price_el.inner_text())
+            
+            # Locatie (Breadcrumbs sau text locatie)
+            # Cautam in .detail-info sau breadcrumbs
+            loc_el = page.locator(".detail-info a[href*='sector']").first
+            if loc_el.is_visible():
+                data["location"] = f"Bucuresti, {clean_text(loc_el.inner_text())}"
+            else:
+                data["location"] = "Bucuresti"
+        except:
+            pass
+
+        # 2. Telefon
+        try:
+            phone_btn = page.locator(".btn-show-phone").first
+            if phone_btn.is_visible():
+                phone_btn.click()
+                page.wait_for_timeout(1000)
                 
-                # Telefonul apare uneori ca imagine de fundal (base64) sau text
-                # Daca e text:
-                phone_text = page.locator(".telnumber").inner_text()
-                if not phone_text:
-                    # Daca e imagine, incercam sa luam atributul style sau valoarea din input hidden
-                    # Publi24 are un input hidden cu telefonul criptat uneori, dar greu de decodat.
-                    # Ne bazam pe text vizibil momentan.
-                    pass
-                else:
-                    extracted = re.search(r'(\d{10}|\d{3}\s\d{3}\s\d{3})', phone_text)
-                    if extracted:
-                        data["phone_number"] = extracted.group(0).replace(" ", "")
+                # Verificam daca e text
+                phone_box = page.locator(".telnumber").first
+                # Pe Publi24 telefonul e des imagine (background-image). 
+                # Playwright nu poate citi text din imagine. 
+                # Luam textul doar daca exista fizic.
+                txt = phone_box.inner_text()
+                if txt and len(txt) > 5:
+                    data["phone_number"] = clean_text(txt)
         except:
             pass
 
-        # --- 2. Descriere ---
+        # 3. Descriere
         try:
-            desc_loc = page.locator(".article-description").first
-            if desc_loc.is_visible():
-                data["description"] = clean_text(desc_loc.inner_text())
+            desc_el = page.locator(".article-description").first
+            if desc_el.is_visible():
+                data["description"] = clean_text(desc_el.inner_text())
         except:
             pass
 
-        # --- 3. Detalii din tabel (Specificatii) ---
-        # <div class="attribute-item"> <div class="attribute-label">...</div> <div class="attribute-value">...</div> </div>
+        # 4. Specificatii (Etaj, Camere, Suprafata)
         try:
-            attributes = page.locator(".article-attributes .attribute-item").all()
-            for attr in attributes:
-                label = clean_text(attr.locator(".attribute-label").inner_text()).lower()
-                value = clean_text(attr.locator(".attribute-value").inner_text())
+            # Iteram prin randurile din tabelul de specificatii
+            specs = page.locator(".article-attributes .attribute-item").all()
+            for spec in specs:
+                label = spec.locator(".attribute-label").inner_text().lower()
+                val = spec.locator(".attribute-value").inner_text()
                 
                 if "etaj" in label:
-                    data["floor"] = value
+                    data["floor"] = clean_text(val)
                 elif "camere" in label:
-                    try:
-                        # "2 camere" -> 2
-                        data["rooms"] = int(re.sub(r'[^\d]', '', value))
-                    except:
-                        pass
+                    nums = re.search(r'\d+', val)
+                    if nums:
+                        data["rooms"] = int(nums.group(0))
                 elif "suprafata" in label:
-                    data["surface"] = extract_surface(value)
+                    data["surface"] = extract_surface(val)
         except:
             pass
 
-        # --- 4. Contact ---
+        # 5. Contact
         try:
-            # <h2 class="user-profile-name">
-            contact_loc = page.locator(".user-profile-name a").first
-            if contact_loc.is_visible():
-                data["contact_name"] = clean_text(contact_loc.inner_text())
+            user_el = page.locator(".user-profile-name").first
+            if user_el.is_visible():
+                data["contact_name"] = clean_text(user_el.inner_text())
         except:
             pass
 
     except Exception as e:
-        print(f"Eroare la pagina de detaliu {url}: {e}")
+        print(f"Eroare pe pagina {url}: {e}")
     finally:
         page.close()
 
     return data
 
 def scrape_publi24(rooms, price_min, price_max, sector):
-    # Setup path Excel
+    # Setup Fisier Excel
     tmp = tempfile.gettempdir()
     file_path = os.path.join(tmp, f"publi24_s{sector}_{int(time.time())}.xlsx")
+    
     results_to_save = []
 
-    # Configurare Playwright
     with sync_playwright() as p:
-        print("Lansare browser Playwright pentru Publi24...")
+        print("Lansare browser Publi24...")
+        # Headless=False ca sa vezi ce face (poti pune True dupa ce merge)
         browser = p.chromium.launch(headless=False, args=["--start-maximized"])
-        
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 800}
-        )
-        
+        context = browser.new_context(viewport={"width": 1366, "height": 768})
         page = context.new_page()
 
         try:
+            # 1. Navigare la lista
             room_slug = f"apartamente-{rooms}-camere" if rooms > 1 else "apartamente-1-camera"
             base_url = f"https://www.publi24.ro/anunturi/imobiliare/de-vanzare/apartamente/{room_slug}/bucuresti/sector-{sector}/"
-            # Publi24 foloseste parametri diferiti uneori, dar url-ul de baza e solid
-            # Parametrii de pret se pun in URL de obicei
-            query_params = f"?minprice={price_min}&maxprice={price_max}"
-            start_url = base_url + query_params
+            start_url = f"{base_url}?minprice={price_min}&maxprice={price_max}"
             
             print(f"1. Accesare URL: {start_url}")
             page.goto(start_url, timeout=60000)
             
-            # Gestionare Cookie (daca apare)
+            # Accept cookie
             try:
-                page.click("#onetrust-accept-btn-handler", timeout=3000)
+                page.locator("button#onetrust-accept-btn-handler").click(timeout=3000)
             except:
                 pass
 
-            # Detectare paginatie
-            # Cautam ultima pagina
-            last_page = 1
-            try:
-                pagination_items = page.locator("ul.pagination li a").all()
-                numbers = []
-                for item in pagination_items:
-                    txt = item.inner_text()
-                    if txt.isdigit():
-                        numbers.append(int(txt))
-                if numbers:
-                    last_page = max(numbers)
-            except:
-                pass
+            # 2. Colectare Link-uri (Paginatie simplificata - doar prima pagina pentru test rapid, 
+            #    sau poti decomenta bucla pentru mai multe)
+            #    Publi24 are infinite scroll sau paginatie clasica in functie de A/B testing.
             
-            print(f"Total pagini detectate: {last_page}")
+            unique_links = set()
+            
+            # Facem scroll sa incarcam elementele
+            for _ in range(3):
+                page.mouse.wheel(0, 3000)
+                page.wait_for_timeout(1000)
 
-            unique_candidates = {}
+            # Selectori posibili pentru carduri
+            # De obicei sunt h2.article-title a SAU div.detail a
+            print("2. Cautare anunturi in lista...")
+            
+            # Varianta 1: Titluri standard
+            links_elements = page.locator("h2.article-title a, h3.article-title a").all()
+            
+            if not links_elements:
+                print("   Nu s-au gasit cu selectorul standard. Incerc selector secundar...")
+                # Varianta 2: Grid view
+                links_elements = page.locator("ul.listing-blocks li h3 a").all()
 
-            # Iterare prin pagini
-            for page_num in range(1, last_page + 1):
-                if page_num > 1:
-                    current_url = f"{start_url}&pag={page_num}"
-                    print(f"Navigare la pagina {page_num}...")
-                    page.goto(current_url)
-                    page.wait_for_timeout(2000)
+            print(f"   -> S-au gasit {len(links_elements)} link-uri potentiale.")
 
-                # Colectare carduri din pagina curenta
-                cards = page.locator("div.article-item").all()
-                print(f"   -> Pagina {page_num}: {len(cards)} anunturi gasite.")
+            for link_el in links_elements:
+                href = link_el.get_attribute("href")
+                if href:
+                    if not href.startswith("http"):
+                        href = "https://www.publi24.ro" + href
+                    unique_links.add(href)
 
-                for card in cards:
-                    try:
-                        # Link & Titlu
-                        title_el = card.locator("h2.article-title a").first
-                        if not title_el.is_visible(): continue
-                        
-                        link = title_el.get_attribute("href")
-                        if link and not link.startswith("http"):
-                            link = "https://www.publi24.ro" + link
-                        
-                        title = clean_text(title_el.inner_text())
+            print(f"3. Incep procesarea a {len(unique_links)} anunturi unice...")
 
-                        # Pret
-                        price_el = card.locator(".article-price").first
-                        price_val = 0
-                        if price_el.is_visible():
-                            price_val = extract_price(price_el.inner_text())
-
-                        # Locatie
-                        loc_el = card.locator(".article-location").first
-                        location = clean_text(loc_el.inner_text()) if loc_el.is_visible() else ""
-
-                        # Suprafata (din card, pentru cheia unica)
-                        short_info = card.locator(".article-short-info").first
-                        surface_val = extract_surface(short_info.inner_text()) if short_info.is_visible() else 0
-
-                        # Fingerprint
-                        fingerprint = f"{title}_{location}_{price_val}_{surface_val}"
-                        
-                        if fingerprint not in unique_candidates:
-                            if price_val and (price_min <= price_val <= price_max):
-                                unique_candidates[fingerprint] = {
-                                    "title": title, "location": location, 
-                                    "price": price_val, "surface": surface_val, 
-                                    "link": link, "rooms_initial": rooms
-                                }
-                    except:
-                        continue
-
-            print(f"2. Începe extragerea detaliată pentru {len(unique_candidates)} anunțuri...")
-
-            # Vizitare fiecare anunt
-            items = list(unique_candidates.values())
-            for idx, item in enumerate(items):
-                print(f"   [{idx+1}/{len(items)}] Procesare: {item['link']}")
+            # 3. Deep Scraping
+            for idx, link in enumerate(unique_links):
+                print(f"   [{idx+1}/{len(unique_links)}] Procesare: {link}")
                 
-                details = scrape_detail_page(context, item['link'])
+                details = scrape_detail_page(context, link)
                 
-                # Combinare date (prioritate date din detaliu)
+                # Verificam daca am reusit sa luam macar titlul si pretul
+                if not details["title"]:
+                    continue # Skip daca nu am putut citi pagina
+
                 final_obj = {
                     'source_website': 'Publi24',
-                    'title': item['title'],
-                    'price': item['price'],
-                    'location': item['location'],
-                    'surface': details['surface'] if details['surface'] else item['surface'],
-                    'link': item['link'],
-                    'description': details['description'] if details['description'] else item['title'],
+                    'title': details['title'],
+                    'price': details['price'],
+                    'location': details['location'],
+                    'surface': details['surface'],
+                    'link': link,
+                    'description': details['description'],
                     'floor': details['floor'],
                     'contact_name': details['contact_name'],
                     'phone_number': details['phone_number'],
-                    'rooms': details['rooms'] if details['rooms'] else item['rooms_initial']
+                    'rooms': details['rooms'] if details['rooms'] else rooms
                 }
                 results_to_save.append(final_obj)
 
         except Exception as e:
-            print(f"Eroare generală Playwright Publi24: {e}")
+            print(f"Eroare Generala: {e}")
         finally:
             browser.close()
 
-    # Salvare
+    # 4. Salvare
     if results_to_save:
-        print(f"Se salvează {len(results_to_save)} rezultate în DB...")
+        print(f"Se salveaza {len(results_to_save)} anunturi in DB...")
         try:
             database.insert_batch_apartments(results_to_save)
         except Exception as e:
-            print(f"Eroare DB: {e}")
+            print(f"Eroare la salvare DB: {e}")
 
         wb = Workbook()
         ws = wb.active
@@ -274,18 +251,17 @@ def scrape_publi24(rooms, price_min, price_max, sector):
         
         for r in results_to_save:
             ws.append([
-                r.get('title'), r.get('description'), r.get('price'), 
-                r.get('location'), r.get('surface'), r.get('floor'), 
-                r.get('rooms'), r.get('contact_name'), r.get('phone_number'), 
-                r.get('link')
+                r['title'], r['description'], r['price'], r['location'], r['surface'],
+                r['floor'], r['rooms'], r['contact_name'], r['phone_number'], r['link']
             ])
         
         wb.save(file_path)
-        print(f"Excel generat: {file_path}")
+        print(f"Excel salvat: {file_path}")
     else:
+        print("Nu au fost gasite rezultate.")
         wb = Workbook()
         ws = wb.active
-        ws.append(["Nu au fost gasite rezultate"])
+        ws.append(["Nu au fost gasite rezultate."])
         wb.save(file_path)
 
     return file_path
