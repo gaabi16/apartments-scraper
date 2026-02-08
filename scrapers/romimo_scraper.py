@@ -1,158 +1,292 @@
-from selenium import webdriver
-from bs4 import BeautifulSoup
-from openpyxl import Workbook
-import tempfile
-import os
 import time
+import random
 import re
+import os
 import sys
+import tempfile
+from openpyxl import Workbook
+from playwright.sync_api import sync_playwright
 
+# Import Database
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import Database.database as database
 
-def get_driver():
-    options = webdriver.ChromeOptions()
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    return webdriver.Chrome(options=options)
-
 def clean_text(text):
     if not text: return None
+    # Curata spatii multiple si caractere invizibile
     cleaned = " ".join(text.replace("\n", " ").split())
-    return cleaned if cleaned else None
+    return cleaned.strip() if cleaned else None
 
 def extract_price(text):
-    if not text: return None
+    if not text: return 0
+    # Romimo format: "74 500 EUR" -> 74500
+    # Eliminam spatiile si punctele
+    text = text.replace(" ", "").replace(".", "")
     digits = re.sub(r'[^\d]', '', text)
-    return int(digits) if digits else None
+    if not digits: return 0
+    return int(digits)
 
-def extract_surface(text):
-    if not text: return None
-    match = re.search(r'(\d+(?:[.,]\d+)?)\s*(?:m|mp)', text, re.IGNORECASE)
+def extract_surface_from_text(text):
+    if not text: return 0.0
+    text = text.replace(",", ".")
+    match = re.search(r'(\d+(?:[.]\d+)?)\s*(?:m|mp)', text, re.IGNORECASE)
     if match:
-        return float(match.group(1).replace(',', '.'))
-    return None
-
-def extract_all_pages(soup):
-    pagination = soup.select_one("ul.pagination")
-    if not pagination: return [1]
-    page_numbers = []
-    for li in pagination.find_all("li"):
-        a = li.find("a")
-        if a and a.text.strip().isdigit():
-            page_numbers.append(int(a.text.strip()))
-    return list(range(1, max(page_numbers) + 1)) if page_numbers else [1]
-
-def scrape_page(driver, page_number, rooms, seen_fingerprints):
-    time.sleep(3)
-    soup = BeautifulSoup(driver.page_source, "html.parser")
-    article_list = soup.select_one("div.article-list")
-    if not article_list: return [], []
-    
-    articles = article_list.select("div.article-item")
-    excel_results = []
-    db_results = []
-    
-    for article in articles:
         try:
-            # 1. LINK & TITLU
-            title_el = article.select_one("h2.article-title a")
-            link = title_el["href"] if title_el and title_el.has_attr("href") else ""
-            title = clean_text(title_el.get_text()) if title_el else None
-            
-            # 2. DESCRIERE
-            desc_el = article.select_one("p.article-description")
-            description = clean_text(desc_el.get_text()) if desc_el else None
-            
-            # 3. LOCATIE
-            loc_el = article.select_one("p.article-location span")
-            location = clean_text(loc_el.get_text()) if loc_el else None
-            
-            # 4. PRET
-            price_el = article.select_one("span.article-price")
-            price_raw = price_el.get_text() if price_el else ""
-            price_val = extract_price(price_raw)
-            
-            # 5. SUPRAFATA
-            short_info_el = article.select_one("p.article-short-info span.article-lbl-txt")
-            short_info_text = short_info_el.get_text() if short_info_el else ""
-            surface_val = extract_surface(short_info_text)
-            
-            # --- UNICITATE ---
-            fingerprint = f"{title}_{location}_{price_val}_{surface_val}"
-            if fingerprint in seen_fingerprints:
-                continue
-            seen_fingerprints.add(fingerprint)
-            
-            # Lista Excel
-            excel_results.append([
-                title, 
-                description, 
-                price_val, 
-                location, 
-                surface_val, 
-                link
-            ])
-            
-            # Obiect DB
-            db_results.append({
-                'source_website': 'Romimo',
-                'title': title,
-                'price': price_val,
-                'location': location,
-                'surface': surface_val,
-                'rooms': rooms,
-                'description': description,
-                'link': link
-            })
-            
-        except Exception as e:
-            continue
+            return float(match.group(1))
+        except:
+            return 0.0
+    return 0.0
+
+def scrape_detail_page(context, url):
+    """
+    Intră pe pagina anunțului și ia toate detaliile conform structurii HTML Romimo.
+    """
+    data = {
+        "title": None,
+        "price": 0,
+        "location": None,
+        "description": None,
+        "floor": None,
+        "contact_name": None,
+        "phone_number": None,
+        "rooms": None,
+        "surface": 0.0
+    }
     
-    return excel_results, db_results
+    page = context.new_page()
+    try:
+        # Timeout generos pentru incarcare
+        page.goto(url, wait_until="domcontentloaded", timeout=45000)
+        # Pauza aleatorie pentru a simula comportament uman
+        page.wait_for_timeout(random.randint(1500, 3000))
+
+        # 1. Titlu
+        try:
+            title_el = page.locator(".detail-title h1").first
+            if title_el.is_visible():
+                data["title"] = clean_text(title_el.inner_text())
+        except:
+            pass
+            
+        # 2. Pret
+        try:
+            price_el = page.locator(".product-price span").first
+            if price_el.is_visible():
+                data["price"] = extract_price(price_el.inner_text())
+        except:
+            pass
+            
+        # 3. Locatie (Breadcrumbs sau zona info)
+        try:
+            # Luam locatia din .detail-info
+            loc_container = page.locator(".detail-info .medium-5 p").first
+            if loc_container.is_visible():
+                data["location"] = clean_text(loc_container.inner_text())
+        except:
+            pass
+
+        # 4. Descriere
+        try:
+            desc_el = page.locator(".article-description").first
+            if desc_el.is_visible():
+                data["description"] = clean_text(desc_el.inner_text())
+        except:
+            pass
+
+        # 5. Specificatii (Suprafata, Camere, Etaj) din tabelul .article-attributes
+        try:
+            attribute_items = page.locator(".article-attributes .attribute-item").all()
+            for item in attribute_items:
+                label = item.locator(".attribute-label").inner_text().lower()
+                value = item.locator(".attribute-value").inner_text()
+                
+                if "suprafata" in label:
+                    data["surface"] = extract_surface_from_text(value)
+                elif "camere" in label:
+                    nums = re.search(r'\d+', value)
+                    if nums:
+                        data["rooms"] = int(nums.group(0))
+                elif "etaj" in label:
+                    data["floor"] = clean_text(value)
+        except:
+            pass
+
+        # 6. Contact Name (User Profile)
+        try:
+            user_el = page.locator(".user-profile-name a").first
+            if user_el.is_visible():
+                data["contact_name"] = clean_text(user_el.inner_text())
+        except:
+            pass
+
+        # 7. Telefon (Incercam click pe buton)
+        try:
+            phone_btn = page.locator(".btn-show-phone").first
+            if phone_btn.is_visible():
+                phone_btn.click()
+                page.wait_for_timeout(1000)
+                
+                # Pe Romimo telefonul poate veni ca text sau imagine
+                phone_box = page.locator(".telnumber").first
+                if phone_box.is_visible():
+                    txt = phone_box.inner_text()
+                    if txt and len(txt) > 3:
+                        data["phone_number"] = clean_text(txt)
+                    else:
+                        # Daca e imagine, marcam ca exista
+                        data["phone_number"] = "Telefon disponibil (imagine)"
+        except:
+            pass
+
+    except Exception as e:
+        print(f"Eroare parsing pagina detaliu {url}: {e}")
+    finally:
+        page.close()
+
+    return data
 
 def scrape_romimo(rooms, price_min, price_max, sector):
-    driver = get_driver()
-    
-    room_slug = f"apartamente-{rooms}-camere" if rooms > 1 else "apartamente-1-camera"
-    base_url = f"https://www.romimo.ro/apartamente/{room_slug}/vanzare/bucuresti/sector-{sector}/"
-    query_params = f"?minprice={price_min}&maxprice={price_max}"
-    
-    start_url = base_url + query_params
-    print(f"Accessing Romimo: {start_url}")
-    
-    driver.get(start_url)
-    time.sleep(4)
-    
-    soup = BeautifulSoup(driver.page_source, "html.parser")
-    # Vizitare toate paginile
-    pages = extract_all_pages(soup)
-    print(f"Pagini găsite: {pages}")
-    
-    all_excel = []
-    all_db = []
-    seen_fingerprints = set()
-    
-    for page_number in pages:
-        current_url = start_url if page_number == 1 else start_url + f"&pag={page_number}"
-        
-        print(f"Scraping pagina {page_number}")
-        driver.get(current_url)
-        ex_res, db_res = scrape_page(driver, page_number, rooms, seen_fingerprints)
-        all_excel.extend(ex_res)
-        all_db.extend(db_res)
-    
-    driver.quit()
-    
-    print(f"Se salveaza {len(all_db)} anunturi UNICE Romimo in DB...")
-    database.insert_batch_apartments(all_db)
-    
+    # Setup Fisier Excel
     tmp = tempfile.gettempdir()
     file_path = os.path.join(tmp, f"romimo_s{sector}_{int(time.time())}.xlsx")
-    wb = Workbook()
-    ws = wb.active
-    ws.append(["Titlu", "Descriere", "Pret", "Locatie", "Suprafata", "Link"])
-    for r in all_excel:
-        ws.append(r)
-    wb.save(file_path)
     
+    results_to_save = []
+
+    with sync_playwright() as p:
+        print("Lansare browser Romimo (Playwright)...")
+        # Headless=True pentru productie, False pentru debug
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(viewport={"width": 1366, "height": 768})
+        
+        # Deschidem pagina principala de cautare
+        page = context.new_page()
+
+        try:
+            # Constructie URL
+            room_slug = f"apartamente-{rooms}-camere" if rooms > 1 else "apartamente-1-camera"
+            base_url = f"https://www.romimo.ro/apartamente/{room_slug}/vanzare/bucuresti/sector-{sector}/"
+            start_url = f"{base_url}?minprice={price_min}&maxprice={price_max}"
+            
+            print(f"1. Accesare URL Lista: {start_url}")
+            page.goto(start_url, timeout=60000)
+            
+            # Acceptam cookies daca apar
+            try:
+                page.locator("button#onetrust-accept-btn-handler").click(timeout=3000)
+            except:
+                pass
+
+            # --- PARTEA 1: Colectare Link-uri Unice ---
+            unique_links = set()
+            
+            # Putem itera prin paginatie. Aici facem un exemplu cu primele 3 pagini sau pana nu mai gasim
+            # Romimo foloseste ?pag=2
+            
+            # Determinam numarul maxim de pagini de scanat (ex: 3 pagini pentru demo, poti mari)
+            max_pages_scan = 3
+            
+            for i in range(1, max_pages_scan + 1):
+                if i > 1:
+                    current_url = f"{start_url}&pag={i}"
+                    print(f"   -> Navigare pagina {i}: {current_url}")
+                    page.goto(current_url, timeout=30000)
+                    page.wait_for_timeout(2000)
+
+                # Scroll usor pentru a incarca lazy images/elements
+                page.mouse.wheel(0, 1000)
+                page.wait_for_timeout(500)
+                
+                # Selectori link-uri (h2 sau h3 in functie de design)
+                # Pe Romimo titlurile sunt de obicei in h2.article-title sau h3 a
+                links_elements = page.locator("h2.article-title a, h3 a.maincolor").all()
+                
+                found_on_page = 0
+                for link_el in links_elements:
+                    href = link_el.get_attribute("href")
+                    if href and "anunt" in href: # Filtru simplu sa fim siguri ca e anunt
+                        if not href.startswith("http"):
+                            href = "https://www.romimo.ro" + href
+                        unique_links.add(href)
+                        found_on_page += 1
+                
+                print(f"   -> Pagina {i}: gasite {found_on_page} anunturi.")
+                
+                if found_on_page == 0:
+                    print("   Nu s-au mai gasit anunturi. Stop paginatie.")
+                    break
+
+            print(f"Total anunturi unice colectate: {len(unique_links)}")
+
+            # --- PARTEA 2: Procesare Fiecare Anunt (Deep Scraping) ---
+            print("2. Incep procesarea detaliata a anunturilor...")
+            
+            for idx, link in enumerate(unique_links):
+                print(f"   [{idx+1}/{len(unique_links)}] Scraping detaliu: {link}")
+                
+                details = scrape_detail_page(context, link)
+                
+                # Validare minima
+                if not details["title"]:
+                    continue
+
+                # Construim obiectul final
+                # Daca scraperul nu a gasit camere in detaliu, folosim ce am cerut in filtru
+                final_rooms = details['rooms'] if details['rooms'] else rooms
+
+                final_obj = {
+                    'source_website': 'Romimo',
+                    'title': details['title'],
+                    'price': details['price'],
+                    'location': details['location'],
+                    'surface': details['surface'],
+                    'link': link,
+                    'description': details['description'],
+                    'floor': details['floor'],
+                    'contact_name': details['contact_name'],
+                    'phone_number': details['phone_number'],
+                    'rooms': final_rooms
+                }
+                results_to_save.append(final_obj)
+
+        except Exception as e:
+            print(f"Eroare Generala Romimo Scraper: {e}")
+        finally:
+            browser.close()
+
+    # Salvare Rezultate
+    if results_to_save:
+        print(f"Se salveaza {len(results_to_save)} anunturi in DB...")
+        try:
+            database.insert_batch_apartments(results_to_save)
+        except Exception as e:
+            print(f"Eroare la salvare DB: {e}")
+
+        # Generare Excel
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["Titlu", "Descriere", "Pret", "Locatie", "Suprafata", "Etaj", "Camere", "Nume Contact", "Telefon", "Link"])
+        
+        for r in results_to_save:
+            ws.append([
+                r['title'], 
+                r['description'], 
+                r['price'], 
+                r['location'], 
+                r['surface'],
+                r['floor'], 
+                r['rooms'], 
+                r['contact_name'], 
+                r['phone_number'], 
+                r['link']
+            ])
+        
+        wb.save(file_path)
+        print(f"Excel salvat: {file_path}")
+    else:
+        print("Nu au fost gasite rezultate.")
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["Nu au fost gasite rezultate."])
+        wb.save(file_path)
+
     return file_path
