@@ -58,7 +58,7 @@ def scrape_detail_page(context, url):
         # Timeout generos pentru incarcare
         page.goto(url, wait_until="domcontentloaded", timeout=45000)
         # Pauza aleatorie pentru a simula comportament uman
-        page.wait_for_timeout(random.randint(1500, 3000))
+        page.wait_for_timeout(random.randint(1000, 2000))
 
         # 1. Titlu
         try:
@@ -154,8 +154,8 @@ def scrape_romimo(rooms, price_min, price_max, sector):
 
     with sync_playwright() as p:
         print("Lansare browser Romimo (Playwright)...")
-        # Headless=True pentru productie, False pentru debug
-        browser = p.chromium.launch(headless=True)
+        # Headless=False pentru a vedea procesul (pune True pentru productie)
+        browser = p.chromium.launch(headless=False) 
         context = browser.new_context(viewport={"width": 1366, "height": 768})
         
         # Deschidem pagina principala de cautare
@@ -179,11 +179,9 @@ def scrape_romimo(rooms, price_min, price_max, sector):
             # --- PARTEA 1: Colectare Link-uri Unice ---
             unique_links = set()
             
-            # Putem itera prin paginatie. Aici facem un exemplu cu primele 3 pagini sau pana nu mai gasim
-            # Romimo foloseste ?pag=2
-            
-            # Determinam numarul maxim de pagini de scanat (ex: 3 pagini pentru demo, poti mari)
-            max_pages_scan = 3
+            # Iterează prin pagini pentru a colecta link-uri
+            # Pentru demo, limităm la primele 5 pagini, dar poți crește numărul
+            max_pages_scan = 5
             
             for i in range(1, max_pages_scan + 1):
                 if i > 1:
@@ -211,6 +209,7 @@ def scrape_romimo(rooms, price_min, price_max, sector):
                 
                 print(f"   -> Pagina {i}: gasite {found_on_page} anunturi.")
                 
+                # Dacă nu găsim nimic pe pagină, ne oprim
                 if found_on_page == 0:
                     print("   Nu s-au mai gasit anunturi. Stop paginatie.")
                     break
@@ -225,7 +224,7 @@ def scrape_romimo(rooms, price_min, price_max, sector):
                 
                 details = scrape_detail_page(context, link)
                 
-                # Validare minima
+                # Validare minima (măcar titlu să aibă)
                 if not details["title"]:
                     continue
 
