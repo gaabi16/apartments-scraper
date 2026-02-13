@@ -152,9 +152,9 @@ def scrape_publi24(rooms, price_min, price_max, sector):
     results_to_save = []
 
     with sync_playwright() as p:
-        print("Lansare browser Publi24...")
-        # Headless=False ca sa vezi ce face (poti pune True dupa ce merge)
-        browser = p.chromium.launch(headless=False, args=["--start-maximized"])
+        print("Lansare browser Publi24 (Infinite Scroll)...")
+        # Headless=True recomandat pentru stabilitate, False pentru debug
+        browser = p.chromium.launch(headless=True)
         context = browser.new_context(viewport={"width": 1366, "height": 768})
         page = context.new_page()
 
@@ -173,30 +173,58 @@ def scrape_publi24(rooms, price_min, price_max, sector):
             except:
                 pass
 
-            # 2. Colectare Link-uri (Paginatie simplificata - doar prima pagina pentru test rapid, 
-            #    sau poti decomenta bucla pentru mai multe)
-            #    Publi24 are infinite scroll sau paginatie clasica in functie de A/B testing.
+            # 2. INFINITE SCROLL LOGIC
+            print("2. Derulare pagină pentru încărcare anunțuri...")
             
+            last_height = page.evaluate("document.body.scrollHeight")
+            no_change_count = 0
+            
+            while True:
+                # Scroll până jos
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                
+                # Așteptăm să se încarce conținutul (Publi24 poate fi lent)
+                page.wait_for_timeout(3000)
+                
+                new_height = page.evaluate("document.body.scrollHeight")
+                
+                # Verificăm dacă s-a modificat înălțimea paginii
+                if new_height == last_height:
+                    no_change_count += 1
+                    
+                    # Încercăm să vedem dacă există buton de "Vezi mai multe"
+                    try:
+                        load_more_btn = page.locator("a.btn-load-more, button.btn-load-more").first
+                        if load_more_btn.is_visible():
+                            print("   -> Click pe butonul 'Vezi mai multe'...")
+                            load_more_btn.click()
+                            page.wait_for_timeout(3000)
+                            no_change_count = 0 # Resetăm contorul dacă am găsit buton
+                            new_height = page.evaluate("document.body.scrollHeight")
+                    except:
+                        pass
+                    
+                    if no_change_count >= 3:
+                        print("   -> S-a atins finalul listei (fără modificări de 3 ori).")
+                        break
+                else:
+                    no_change_count = 0
+                    # Afișăm progresul vizual
+                    count = page.locator("h2.article-title, h3.article-title").count()
+                    print(f"   -> Anunțuri încărcate vizual: {count}")
+                
+                last_height = new_height
+
+            # 3. Colectare Link-uri
+            print("3. Colectare link-uri unice...")
             unique_links = set()
             
-            # Facem scroll sa incarcam elementele
-            for _ in range(3):
-                page.mouse.wheel(0, 3000)
-                page.wait_for_timeout(1000)
-
             # Selectori posibili pentru carduri
-            # De obicei sunt h2.article-title a SAU div.detail a
-            print("2. Cautare anunturi in lista...")
-            
-            # Varianta 1: Titluri standard
             links_elements = page.locator("h2.article-title a, h3.article-title a").all()
             
             if not links_elements:
-                print("   Nu s-au gasit cu selectorul standard. Incerc selector secundar...")
-                # Varianta 2: Grid view
+                # Varianta Grid view
                 links_elements = page.locator("ul.listing-blocks li h3 a").all()
-
-            print(f"   -> S-au gasit {len(links_elements)} link-uri potentiale.")
 
             for link_el in links_elements:
                 href = link_el.get_attribute("href")
@@ -205,17 +233,16 @@ def scrape_publi24(rooms, price_min, price_max, sector):
                         href = "https://www.publi24.ro" + href
                     unique_links.add(href)
 
-            print(f"3. Incep procesarea a {len(unique_links)} anunturi unice...")
+            print(f"4. Incep procesarea a {len(unique_links)} anunturi unice...")
 
-            # 3. Deep Scraping
+            # 4. Deep Scraping
             for idx, link in enumerate(unique_links):
                 print(f"   [{idx+1}/{len(unique_links)}] Procesare: {link}")
                 
                 details = scrape_detail_page(context, link)
                 
-                # Verificam daca am reusit sa luam macar titlul si pretul
                 if not details["title"]:
-                    continue # Skip daca nu am putut citi pagina
+                    continue 
 
                 final_obj = {
                     'source_website': 'Publi24',
@@ -237,7 +264,7 @@ def scrape_publi24(rooms, price_min, price_max, sector):
         finally:
             browser.close()
 
-    # 4. Salvare
+    # 5. Salvare
     if results_to_save:
         print(f"Se salveaza {len(results_to_save)} anunturi in DB...")
         try:
